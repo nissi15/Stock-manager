@@ -155,11 +155,41 @@ body{color:#08090b}
 .product-head,.cart-head,th{color:#171a1e;font-size:13px;font-weight:700}
 .product-row,table{color:#0b0c0e;font-size:15px}
 .product-name small,.price-cell small,.cart-empty,.onboarding-empty p,.metric small,.payment-totals span,.payment-summary span{color:#20242a;font-weight:550}
-td{color:#111317;font-size:15px;font-weight:500}
+td{color:#111317;font-size:15px;font-weight:400}
 td.strong{color:#050607;font-weight:700}
 .form-grid label,.form-stack label,.auth-card label,.metric>span{color:#111317;font-size:14px;font-weight:650}
 .secondary,.primary.compact{font-size:14px;font-weight:650}
 .simple-list small,.muted,.activity-row p,.activity-row time{color:#252a30;font-weight:500}
+.daily-prices-button{height:36px;border:1px solid #dfe3e8;border-radius:9px;background:#fff;color:#111317;padding:0 13px;font-size:13px;font-weight:600}
+.daily-prices-button:hover{background:#f6f7f8}
+.sale-link{border:0;background:none;padding:6px 0;color:#175fca;font-size:inherit;font-weight:500;text-decoration:none}
+.sale-link:hover{text-decoration:underline}
+.sale-total{font-weight:650}
+.sale-detail-drawer{width:min(620px,100vw)}
+.sale-detail-drawer .drawer-head h2{margin-top:7px}
+.sale-summary-strip{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:28px}
+.sale-summary-strip>span{display:flex;flex-direction:column;gap:7px;border:1px solid #e5e7ea;border-radius:11px;padding:16px}
+.sale-summary-strip small{color:#30353b;font-size:12px;font-weight:600}
+.sale-summary-strip strong{font-size:18px}
+.sale-detail-head,.sale-detail-row{display:grid;grid-template-columns:minmax(140px,1fr) 45px 110px 120px;gap:12px;align-items:center}
+.sale-detail-head{padding:0 0 12px;border-bottom:1px solid #e8eaed;color:#30353b;font-size:12px;font-weight:650}
+.sale-detail-row{padding:17px 0;border-bottom:1px solid #eceef0;font-size:13px}
+.sale-detail-row>span:first-child{display:flex;flex-direction:column;gap:4px}
+.sale-detail-row small{color:#3f464e;font-size:11px;font-weight:500}
+.sale-payment-list{margin-top:30px}
+.sale-payment-list h3,.sale-payment-edit h3{font-size:15px;margin:0 0 12px}
+.sale-payment-list>div{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid #eceef0;font-size:13px}
+.sale-edit-list{display:flex;flex-direction:column;gap:12px}
+.sale-edit-row{display:grid;grid-template-columns:minmax(120px,1fr) 78px 145px;gap:12px;align-items:end;padding-bottom:14px;border-bottom:1px solid #eceef0}
+.sale-edit-row>div{display:flex;flex-direction:column;gap:4px}.sale-edit-row small{color:#353b42;font-size:11px}
+.sale-edit-row label,.sale-payment-edit label{display:flex;flex-direction:column;gap:7px;color:#20242a;font-size:11px;font-weight:600}
+.sale-edit-row input{height:42px;width:100%;border:1px solid #dfe3e8;border-radius:8px;padding:0 10px}
+.sale-payment-edit{margin-top:27px;display:flex;flex-direction:column;gap:13px}
+.sale-payment-edit label{display:grid;grid-template-columns:85px 1fr;align-items:center}
+.payment-check{display:flex;justify-content:space-between;padding-top:14px;border-top:1px solid #e5e7ea;font-size:13px}
+.danger-text{color:#ac332b}
+.sale-detail-actions{display:flex;gap:10px}.sale-detail-actions .primary{flex:1}.sale-detail-actions .secondary{flex:none}
+.closed-sale-note{color:#30353b;font-size:12px;line-height:1.5}
 @media(max-width:1500px){.sale-layout.payment-visible{grid-template-columns:minmax(350px,.92fr) minmax(480px,1.08fr)}}
 @media(max-width:850px){.rail.expanded{width:205px}.rail.expanded+.workspace{width:calc(100% - 205px)}.workspace,.rail.expanded+.workspace{padding:0 18px 22px}.sale-layout,.sale-layout.payment-visible{height:auto;min-height:0;grid-template-columns:1fr}.products-panel{min-height:380px}.cart-panel{min-height:440px}.topbar{height:90px}.topbar h1{font-size:25px}}
 @media(max-width:600px){.rail,.rail.expanded{width:54px}.rail.expanded+.workspace,.workspace{width:calc(100% - 54px);padding:0 10px 16px}.rail-header{padding:0 8px;height:62px}.rail .brand-name,.rail .rail-caption,.rail .account-details,.rail nav button span,.rail .rail-bottom span{display:none!important}.rail nav,.rail.expanded nav{padding:13px 4px 0}.rail nav button,.rail.expanded nav button{height:43px;min-height:43px;justify-content:center;padding:0}.rail-footer{padding:4px}.rail-bottom{justify-content:center;padding:0}.signout-button{padding:4px;justify-content:center}.account-avatar{width:30px;height:30px}.topbar{height:74px;margin-bottom:12px}.topbar h1{font-size:22px}.eyebrow{font-size:8px}.status{font-size:11px}.status-button{font-size:11px;padding:7px}.status>span:not(.status-divider){gap:5px}.panel{padding:18px 14px}.panel h2,.page-card h2{font-size:19px}.sale-layout{gap:12px}.product-head{padding:20px 0 12px;font-size:10px}.product-row{font-size:12px}.product-name strong{font-size:13px}.product-name small{font-size:10px}.cart-head{display:none}.cart-row input{height:40px;font-size:12px}.cart-row .product-name strong{font-size:12px}.subtotal{font-size:12px}.onboarding-empty{margin-top:45px}.end-sale{height:48px;margin-top:15px}.auth-card{padding:25px}.verify-actions{flex-direction:column;align-items:flex-start;gap:14px}}

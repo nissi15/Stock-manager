@@ -77,6 +77,19 @@ export async function openDay(prices: Record<string, number>) {
   }
 }
 
+export async function updateDailyPrices(prices: Record<string, number>) {
+  const active = get(products).filter((product) => product.active);
+  if (active.some((product) => !Number.isFinite(prices[product.id]) || prices[product.id] < 0)) throw new Error('Every active product needs a valid price.');
+  if (supabase) {
+    const { error } = await supabase.rpc('update_daily_prices', { p_prices: prices });
+    if (error) throw error;
+    await refresh();
+  } else {
+    products.update((all) => all.map((product) => ({ ...product, price: prices[product.id] ?? product.price })));
+    audit('Daily prices updated', `${active.length} product prices confirmed for ${today()}`);
+  }
+}
+
 export async function closeDay() {
   if (supabase) { const { error } = await supabase.rpc('close_business_day'); if (error) throw error; await refresh(); }
   else { businessDay.update((day) => day ? { ...day, status: 'closed', closedAt: new Date().toISOString() } : day); audit('Day closed', 'Business day formally closed'); }
@@ -108,6 +121,35 @@ export async function createSale(lines: CartLine[], payments: Payment[]) {
   audit('Sale completed', `${saleId.slice(0, 8)} · RWF ${total.toLocaleString()}`);
   if (!isDemo) await queueSale(sale);
   return saleId;
+}
+
+export async function updateSale(saleId: string, lines: CartLine[], payments: Payment[]) {
+  const original = get(sales).find((sale) => sale.id === saleId);
+  if (!original) throw new Error('Sale not found.');
+  const saleDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kigali' }).format(new Date(original.at));
+  if (saleDate !== today() || get(businessDay)?.status !== 'open') throw new Error('Only sales from the open business day can be edited.');
+  if (!lines.length || lines.some((line) => line.quantity <= 0 || line.unitPrice < 0)) throw new Error('Check the sale items.');
+  const total = lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
+  if (payments.reduce((sum, payment) => sum + payment.amount, 0) !== total) throw new Error('Payments must equal the sale total.');
+  if (supabase) {
+    const { error } = await supabase.rpc('edit_sale', { p_sale_id: saleId, p_lines: lines, p_payments: payments });
+    if (error) throw error;
+    await refresh();
+    return;
+  }
+  const oldQuantity = new Map(original.lines.map((line) => [line.productId, line.quantity]));
+  products.update((all) => all.map((product) => {
+    const before = oldQuantity.get(product.id) ?? 0;
+    const after = lines.find((line) => line.productId === product.id)?.quantity ?? 0;
+    return { ...product, stock: product.stock + before - after };
+  }));
+  const resolved = lines.map((line) => {
+    const oldLine = original.lines.find((entry) => entry.productId === line.productId);
+    return { ...line, name: oldLine?.name ?? get(products).find((product) => product.id === line.productId)?.name ?? 'Unknown', cost: oldLine ? Math.round(oldLine.cost * line.quantity / oldLine.quantity) : 0 };
+  });
+  const cost = resolved.reduce((sum, line) => sum + line.cost, 0);
+  sales.update((all) => all.map((sale) => sale.id === saleId ? { ...sale, lines: resolved, payments, total, cost } : sale));
+  audit('Sale edited', `${saleId.slice(0, 8)} · RWF ${total.toLocaleString()}`);
 }
 
 export async function addStock(input: { productId: string; quantity: number; unitCost: number; supplier: string; paid: number; note: string }) {

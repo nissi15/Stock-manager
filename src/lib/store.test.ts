@@ -8,7 +8,8 @@ vi.mock('./supabase', () => ({ supabase: null }));
 
 import {
   activities, addExpense, addProduct, addStock, businessDay, closeDay,
-  createSale, expenses, openDay, products, reopenDay, sales, stockEntries
+  createSale, expenses, openDay, products, reopenDay, sales, stockEntries,
+  updateDailyPrices, updateSale
 } from './store';
 
 const catalog: Product[] = [
@@ -44,6 +45,14 @@ describe('business day', () => {
     await reopenDay('Corrected an expense');
     expect(get(businessDay)?.status).toBe('open');
     expect(get(activities)[0]).toMatchObject({ action: 'Day reopened', detail: 'Corrected an expense' });
+  });
+
+  it('updates selling prices during an open day', async () => {
+    await openDay({ rice: 55000, sugar: 42000 });
+    await updateDailyPrices({ rice: 57000, sugar: 43000 });
+
+    expect(get(products).map((product) => product.price)).toEqual([57000, 43000]);
+    expect(get(activities)[0].action).toBe('Daily prices updated');
   });
 });
 
@@ -89,6 +98,24 @@ describe('sales and expenses', () => {
     expect(get(products)[0].stock).toBe(10);
     expect(get(sales)[0]).toMatchObject({ id: saleId, total: 110000, sync: 'synced', payments: [{ method: 'cash', amount: 60000 }, { method: 'momo', amount: 50000 }] });
     expect(get(activities)[0].action).toBe('Sale completed');
+  });
+
+  it('corrects a same-day sale and reconciles stock and payments', async () => {
+    await openDay({});
+    const saleId = await createSale(
+      [{ productId: 'rice', quantity: 2, unitPrice: 55000 }],
+      [{ method: 'cash', amount: 110000 }]
+    );
+
+    await updateSale(
+      saleId,
+      [{ productId: 'rice', quantity: 3, unitPrice: 56000 }],
+      [{ method: 'momo', amount: 168000 }]
+    );
+
+    expect(get(products)[0].stock).toBe(9);
+    expect(get(sales)[0]).toMatchObject({ total: 168000, payments: [{ method: 'momo', amount: 168000 }] });
+    expect(get(activities)[0].action).toBe('Sale edited');
   });
 
   it('rejects zero expenses and audits a valid expense', async () => {
