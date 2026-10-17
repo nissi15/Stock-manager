@@ -40,7 +40,7 @@ The migration enforces per-user row-level security and uses database functions f
 ## Current scope
 
 - New Sale workspace with search, cart, per-sale price changes, split Cash/MoMo/Bank payment, and drag or keyboard/click confirmation.
-- Daily price review and same-day updates, reusable category/measurement suggestions, stock receipts with buying cost and supplier, oversell prevention, expenses, clickable sale details with audited same-day corrections, payment totals, and activity timeline.
+- Daily price review and same-day updates, reusable category/measurement suggestions, uniquely referenced FIFO stock receipts with automatic arrival times, oversell prevention, expenses, clickable sale details with audited same-day corrections, payment totals, and activity timeline.
 - CSV export for sales; responsive layout and reduced-motion support.
 - IndexedDB queue for sales made while the app remains open and goes offline.
 
