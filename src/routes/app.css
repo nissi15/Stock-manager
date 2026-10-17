@@ -202,6 +202,7 @@ td.strong{color:#050607;font-weight:700}
 .sales-filters{display:grid;grid-template-columns:minmax(145px,.9fr) minmax(155px,1fr) minmax(150px,1fr) minmax(145px,.9fr) auto;gap:12px;align-items:end;padding:16px;margin:0 0 10px;background:#f7f8fa;border:1px solid #e4e7eb;border-radius:10px}
 .sales-filters label{display:flex;min-width:0;flex-direction:column;gap:6px;color:#363c43;font-size:11px;font-weight:700}
 .sales-filters input,.sales-filters select{width:100%;height:40px;min-width:0;padding:0 11px;border:1px solid #d9dee4;border-radius:8px;background:#fff;color:#111418;font-size:13px;font-weight:550}
+.inventory-filters{grid-template-columns:repeat(4,minmax(0,1fr));margin-top:14px}
 .filter-reset{height:40px;padding:0 16px;border:1px solid #cfd5dc;border-radius:8px;background:#fff;color:#145fc5;font-size:13px;font-weight:700}
 .filter-reset:hover{background:#eef5ff}
 .results-count{padding:4px 2px 2px;color:#666f79;font-size:12px;font-weight:600}
