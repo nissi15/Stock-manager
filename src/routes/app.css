@@ -48,7 +48,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline-color:#316
 .panel,.page-card,.metric{border:1px solid #e1e4e8;border-radius:13px;box-shadow:0 6px 24px #17191d08}
 .panel{padding:25px}
 .panel h2,.page-card h2{font-size:21px;letter-spacing:-.035em}
-.sale-layout{height:calc(100vh - 155px);min-height:620px;grid-template-columns:minmax(380px,.98fr) minmax(480px,1.02fr);gap:18px}
+.sale-layout{height:calc(100vh - 155px);min-height:620px;grid-template-columns:minmax(420px,1.08fr) minmax(480px,.92fr);gap:18px}
 .sale-layout.payment-visible{grid-template-columns:minmax(300px,.8fr) minmax(390px,1fr) minmax(320px,.75fr)}
 .panel-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .panel-heading p{margin-top:7px;color:#858c96;font-size:13px}
@@ -68,6 +68,9 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline-color:#316
 .product-name small,.price-cell small{font-size:12px;color:#8b939d}
 .cart-row{border-color:#eceef0;padding:17px 0}
 .cart-row input{height:45px;border-color:#dfe3e8;border-radius:8px;font-size:14px}
+.quantity-cell{display:flex;min-width:0;flex-direction:column;gap:6px}
+.quantity-cell .qty-input.invalid{border-color:#d92d20;background:#fff8f7;color:#9f2119;box-shadow:0 0 0 2px #d92d2012}
+.stock-warning{color:#c1251b;font-size:11px;font-weight:700;line-height:1.2;white-space:nowrap}
 .cart-row .product-name strong{font-size:15px}
 .cart-row .product-name small{font-size:11px}
 .subtotal{font-size:14px;font-weight:600;margin-top:14px}
