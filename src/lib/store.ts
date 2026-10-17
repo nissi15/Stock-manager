@@ -105,6 +105,9 @@ export async function createSale(lines: CartLine[], payments: Payment[]) {
   const total = lines.reduce((sum, l) => sum + l.quantity * l.unitPrice, 0);
   if (!get(businessDay) || get(businessDay)?.status !== 'open') throw new Error('Open the business day before selling.');
   if (!lines.length || lines.some((l) => l.quantity <= 0 || l.unitPrice < 0)) throw new Error('Check the sale items.');
+  const catalog = get(products);
+  const unavailable = lines.find((line) => line.quantity > (catalog.find((product) => product.id === line.productId)?.stock ?? 0));
+  if (unavailable) throw new Error(`Not enough stock for ${catalog.find((product) => product.id === unavailable.productId)?.name ?? 'this product'}.`);
   if (payments.reduce((sum, p) => sum + p.amount, 0) !== total) throw new Error('Payments must equal the sale total.');
   const saleId = id();
   if (supabase && get(online)) {
@@ -113,7 +116,6 @@ export async function createSale(lines: CartLine[], payments: Payment[]) {
     await refresh();
     return saleId;
   }
-  const catalog = get(products);
   const resolved = lines.map((line) => ({ ...line, name: catalog.find((p) => p.id === line.productId)?.name ?? 'Unknown', cost: 0 }));
   const sale: Sale = { id: saleId, at: new Date().toISOString(), lines: resolved, payments, total, cost: 0, hasCostDeficit: true, source: isDemo ? 'demo' : 'supabase', sync: isDemo ? 'synced' : 'queued' };
   sales.update((all) => [sale, ...all]);
@@ -129,6 +131,13 @@ export async function updateSale(saleId: string, lines: CartLine[], payments: Pa
   const saleDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kigali' }).format(new Date(original.at));
   if (saleDate !== today() || get(businessDay)?.status !== 'open') throw new Error('Only sales from the open business day can be edited.');
   if (!lines.length || lines.some((line) => line.quantity <= 0 || line.unitPrice < 0)) throw new Error('Check the sale items.');
+  const catalog = get(products);
+  const unavailable = lines.find((line) => {
+    const before = original.lines.find((entry) => entry.productId === line.productId)?.quantity ?? 0;
+    const available = catalog.find((product) => product.id === line.productId)?.stock ?? 0;
+    return line.quantity - before > available;
+  });
+  if (unavailable) throw new Error(`Not enough stock for ${catalog.find((product) => product.id === unavailable.productId)?.name ?? 'this product'}.`);
   const total = lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
   if (payments.reduce((sum, payment) => sum + payment.amount, 0) !== total) throw new Error('Payments must equal the sale total.');
   if (supabase) {

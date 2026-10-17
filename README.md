@@ -31,7 +31,7 @@ GitHub Actions runs these checks automatically on pushes and pull requests.
 ## Connect Supabase
 
 1. Create a Supabase project and enable email/password authentication.
-2. Run [`supabase/migrations/0001_initial.sql`](supabase/migrations/0001_initial.sql), then [`supabase/migrations/0002_sale_edits_and_daily_prices.sql`](supabase/migrations/0002_sale_edits_and_daily_prices.sql), in the Supabase SQL editor.
+2. Run the SQL files in `supabase/migrations` in numeric order in the Supabase SQL editor. Existing projects should run each newly added migration once.
 3. Copy `.env.example` to `.env` and fill `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` with the project URL and publishable/anon key. **Never put a service-role key in this file.**
 4. Restart the dev server, sign up, create products, record opening stock through **Add stock**, and start the day.
 
@@ -40,7 +40,7 @@ The migration enforces per-user row-level security and uses database functions f
 ## Current scope
 
 - New Sale workspace with search, cart, per-sale price changes, split Cash/MoMo/Bank payment, and drag or keyboard/click confirmation.
-- Daily price review and same-day updates, stock receipts with buying cost and supplier, expenses, clickable sale details with audited same-day corrections, payment totals, and activity timeline.
+- Daily price review and same-day updates, reusable category/measurement suggestions, stock receipts with buying cost and supplier, oversell prevention, expenses, clickable sale details with audited same-day corrections, payment totals, and activity timeline.
 - CSV export for sales; responsive layout and reduced-motion support.
 - IndexedDB queue for sales made while the app remains open and goes offline.
 

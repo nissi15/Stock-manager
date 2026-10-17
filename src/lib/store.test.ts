@@ -75,6 +75,12 @@ describe('inventory', () => {
     await addProduct({ name: 'Jasmine', category: 'Rice', unit: '25 kg sack', price: 60000 });
     expect(get(products).find((product) => product.name === 'Jasmine')).toMatchObject({ category: 'Rice', stock: 0, unit: '25 kg sack' });
   });
+
+  it('allows one product name with different measurements', async () => {
+    await addProduct({ name: 'Meru', category: 'Oil', unit: '5 L bottle', price: 18000 });
+    await addProduct({ name: 'Meru', category: 'Oil', unit: '20 L jerrycan', price: 65000 });
+    expect(get(products).filter((product) => product.name === 'Meru').map((product) => product.unit)).toEqual(['5 L bottle', '20 L jerrycan']);
+  });
 });
 
 describe('sales and expenses', () => {
@@ -86,6 +92,16 @@ describe('sales and expenses', () => {
     await expect(createSale(lines, [{ method: 'cash', amount: 100000 }])).rejects.toThrow('Payments must equal');
     expect(get(sales)).toHaveLength(0);
     expect(get(products)[0].stock).toBe(12);
+  });
+
+  it('does not allow a sale quantity above available stock', async () => {
+    await openDay({});
+    await expect(createSale(
+      [{ productId: 'sugar', quantity: 7, unitPrice: 40000 }],
+      [{ method: 'cash', amount: 280000 }]
+    )).rejects.toThrow('Not enough stock for Sugar');
+    expect(get(products).find((product) => product.id === 'sugar')?.stock).toBe(6);
+    expect(get(sales)).toHaveLength(0);
   });
 
   it('reduces stock and records both payment accounts on a completed sale', async () => {

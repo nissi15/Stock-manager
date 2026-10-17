@@ -179,6 +179,7 @@ begin
     if v_quantity is null or v_quantity <= 0 or v_price is null or v_price < 0 then raise exception 'Invalid sale line'; end if;
     select id,name,stock into v_product from products where id = (v_line->>'productId')::uuid and owner_id = v_owner and active for update;
     if not found then raise exception 'Product not found'; end if;
+    if v_product.stock < v_quantity then raise exception 'Not enough stock for %', v_product.name; end if;
     v_needed := v_quantity; v_line_cost := 0;
     for v_batch in select id,remaining,unit_cost from stock_batches where owner_id = v_owner and product_id = v_product.id and remaining > 0 order by received_at,id for update loop
       exit when v_needed = 0;
@@ -187,7 +188,7 @@ begin
       v_line_cost := v_line_cost + v_used::bigint*v_batch.unit_cost;
       v_needed := v_needed - v_used;
     end loop;
-    if v_needed > 0 then v_deficit := true; end if;
+    if v_needed > 0 then raise exception 'Missing purchase cost for %', v_product.name; end if;
     insert into sale_lines(owner_id,sale_id,product_id,product_name,quantity,unit_price,unit_cost,cost_deficit) values(v_owner,p_id,v_product.id,v_product.name,v_quantity,v_price,v_line_cost,v_needed);
     update products set stock = stock - v_quantity where id = v_product.id;
     v_total := v_total + v_quantity::bigint*v_price; v_cost := v_cost + v_line_cost;
