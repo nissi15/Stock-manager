@@ -233,3 +233,4 @@ td.strong{color:#050607;font-weight:700}
 .text-link{display:inline-flex;align-items:center;gap:7px;align-self:flex-start;border:0;background:none;color:#2367d8;padding:0;font-size:12px;font-weight:600}
 @media(max-width:1500px){.trend-card{grid-column:span 1}.attention-card{grid-column:span 1}}
 @media(max-width:600px){.trend-card,.attention-card{grid-column:span 1}.trend-chart{height:215px;gap:3px;padding:15px 0 0}.trend-track{height:150px}.trend-bar{width:65%}.trend-label{font-size:9px}.trend-value{font-size:8px}}
+.price-list .money-input input{color:#000}
