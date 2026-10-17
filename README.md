@@ -11,6 +11,15 @@ npm run dev
 
 With no environment variables, the app opens in **Demo mode**. It uses browser local storage and sample products so the interface can be reviewed without a backend. Demo records are not production accounting data; costs and profit are intentionally unverified.
 
+## Run tests
+
+```sh
+npm test
+```
+
+The unit tests exercise the in-memory stock and sales workflow with Supabase mocked, so they never read or change the live project. Use `npm run test:watch` while developing. Before shipping changes, run `npm test`, `npm run check`, and `npm run build`.
+GitHub Actions runs these checks automatically on pushes and pull requests.
+
 ## Connect Supabase
 
 1. Create a Supabase project and enable email/password authentication.
@@ -29,6 +38,6 @@ The migration enforces per-user row-level security and uses database functions f
 
 ## Important limits before live deployment
 
-This is a working first build, **not yet a production-ready accounting system**. Offline catalog/day restoration after a full reload, reconciliation of pending sales across devices before close, supplier-balance settlement, cash drawer reconciliation, PDF/XLSX exports, receipt printing, and automated database tests remain to be completed. Supabase migration and RLS have not been exercised against a real project because credentials were intentionally not supplied. Use test data until those checks are complete.
+This is a working first build, **not yet a production-ready accounting system**. Offline catalog/day restoration after a full reload, reconciliation of pending sales across devices before close, supplier-balance settlement, cash drawer reconciliation, PDF/XLSX exports, receipt printing, and automated database tests remain to be completed. RLS and database functions still need dedicated integration tests with separate test accounts. Use test data until those checks are complete.
 
-Run `npm run check` and `npm run build` before deploying. The app uses the `Africa/Kigali` business-day timezone and integer RWF amounts.
+The app uses the `Africa/Kigali` business-day timezone and integer RWF amounts.
