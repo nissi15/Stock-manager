@@ -2,22 +2,19 @@ import { get, writable } from 'svelte/store';
 import type { Activity, BusinessDay, Expense, Product, Sale, StockEntry, CartLine, Payment } from './types';
 import { today } from './format';
 import { supabase } from './supabase';
+import { generateDemoScenario } from './demoScenario';
 
-const seedProducts: Product[] = [
-  { id: 'bismati', name: 'Bismati', category: 'Rice', unit: '25 kg sack', stock: 120, price: 120000, active: true },
-  { id: 'jasmine', name: 'Jasmine', category: 'Rice', unit: '25 kg sack', stock: 80, price: 130000, active: true },
-  { id: 'sugar', name: 'Sugar', category: 'Sugar', unit: '50 kg sack', stock: 60, price: 50000, active: true }
-];
-export const products = writable<Product[]>(seedProducts);
-export const sales = writable<Sale[]>([]);
-export const stockEntries = writable<StockEntry[]>([]);
-export const expenses = writable<Expense[]>([]);
-export const activities = writable<Activity[]>([]);
-export const businessDay = writable<BusinessDay | null>(null);
+export const isDemo = !supabase;
+const demo = isDemo ? generateDemoScenario() : null;
+export const products = writable<Product[]>(demo?.products ?? []);
+export const sales = writable<Sale[]>(demo?.sales ?? []);
+export const stockEntries = writable<StockEntry[]>(demo?.stockEntries ?? []);
+export const expenses = writable<Expense[]>(demo?.expenses ?? []);
+export const activities = writable<Activity[]>(demo?.activities ?? []);
+export const businessDay = writable<BusinessDay | null>(demo?.businessDay ?? null);
 export const ready = writable(false);
 export const online = writable(typeof navigator === 'undefined' ? true : navigator.onLine);
-export const isDemo = !supabase;
-const key = 'stock-manager-demo-v1';
+const key = 'stock-manager-demo-v2';
 const id = () => crypto.randomUUID();
 const audit = (action: string, detail: string) => activities.update((all) => [{ id: id(), at: new Date().toISOString(), action, detail }, ...all]);
 
@@ -27,7 +24,7 @@ export function initStore() {
   if (saved && isDemo) {
     try {
       const data = JSON.parse(saved);
-      products.set(data.products ?? seedProducts);
+      products.set(data.products ?? demo?.products ?? []);
       sales.set(data.sales ?? []);
       stockEntries.set(data.stockEntries ?? []);
       expenses.set(data.expenses ?? []);

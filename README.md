@@ -9,7 +9,15 @@ npm install
 npm run dev
 ```
 
-With no environment variables, the app opens in **Demo mode**. It uses browser local storage and sample products so the interface can be reviewed without a backend. Demo records are not production accounting data; costs and profit are intentionally unverified.
+With no environment variables, the app opens in **Demo mode**. It uses browser local storage and a generated seven-day wholesale scenario so the interface can be reviewed without a backend. Demo records are not production accounting data; profit is intentionally withheld as unverified.
+
+If your local `.env` points to Supabase, launch the scenario separately with:
+
+```sh
+npm run dev:demo
+```
+
+Open `http://localhost:5174/`. This mode ignores Supabase even when credentials are present. It starts with Rice (Tanzanian, Zahabu, Pakistan), Oil (Zahabu, Crystal), Soft drink (Novida, Martin), Salt, and Soap (Jambo, Jama). Every product has costed opening stock. Each of the last seven days has 19–30 mixed sales, stock receipts, and expenses, with Cash, MoMo, Bank, and split payments. Demo edits persist in that browser's local storage; a fresh browser profile starts from the generated scenario again.
 
 ## Run tests
 
@@ -17,7 +25,7 @@ With no environment variables, the app opens in **Demo mode**. It uses browser l
 npm test
 ```
 
-The unit tests exercise the in-memory stock and sales workflow with Supabase mocked, so they never read or change the live project. Use `npm run test:watch` while developing. Before shipping changes, run `npm test`, `npm run check`, and `npm run build`.
+The unit tests exercise the in-memory workflow and verify the generated scenario's daily operation counts, stock reconciliation, costs, and payment totals. Supabase is mocked, so they never read or change the live project. Use `npm run test:watch` while developing. Before shipping changes, run `npm test`, `npm run check`, and `npm run build`.
 GitHub Actions runs these checks automatically on pushes and pull requests.
 
 ## Connect Supabase
