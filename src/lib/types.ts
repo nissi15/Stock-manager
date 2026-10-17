@@ -1,0 +1,9 @@
+export type PaymentMethod = 'cash' | 'momo' | 'bank';
+export type Product = { id: string; name: string; category: string; unit: string; stock: number; price: number; active: boolean };
+export type CartLine = { productId: string; quantity: number; unitPrice: number };
+export type Payment = { method: PaymentMethod; amount: number };
+export type Sale = { id: string; at: string; lines: (CartLine & { name: string; cost: number })[]; payments: Payment[]; total: number; cost: number; hasCostDeficit: boolean; source: 'demo' | 'supabase'; sync: 'synced' | 'queued' };
+export type StockEntry = { id: string; at: string; productId: string; productName: string; quantity: number; unitCost: number; supplier: string; paid: number; note: string };
+export type Expense = { id: string; at: string; category: string; description: string; amount: number; method: PaymentMethod };
+export type Activity = { id: string; at: string; action: string; detail: string };
+export type BusinessDay = { date: string; status: 'open' | 'closed'; openedAt: string; closedAt?: string };
