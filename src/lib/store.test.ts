@@ -8,7 +8,7 @@ vi.mock('./supabase', () => ({ supabase: null }));
 
 import {
   activities, addExpense, addProduct, addStock, businessDay, closeDay,
-  createSale, expenses, openDay, products, reopenDay, sales, stockEntries,
+  createSale, expenses, openDay, products, recordStockLoss, reopenDay, sales, stockEntries, stockLosses,
   updateDailyPrices, updateSale
 } from './store';
 
@@ -21,6 +21,7 @@ beforeEach(() => {
   products.set(catalog.map((product) => ({ ...product })));
   sales.set([]);
   stockEntries.set([]);
+  stockLosses.set([]);
   expenses.set([]);
   activities.set([]);
   businessDay.set(null);
@@ -80,6 +81,26 @@ describe('inventory', () => {
     await addProduct({ name: 'Meru', category: 'Oil', unit: '5 L bottle', price: 18000 });
     await addProduct({ name: 'Meru', category: 'Oil', unit: '20 L jerrycan', price: 65000 });
     expect(get(products).filter((product) => product.name === 'Meru').map((product) => product.unit)).toEqual(['5 L bottle', '20 L jerrycan']);
+  });
+
+  it('records damaged stock at FIFO cost and reduces available stock', async () => {
+    stockEntries.set([
+      { id: 'new', at: '2026-10-02T08:00:00Z', productId: 'rice', productName: 'Bismati', quantity: 3, remaining: 3, unitCost: 40000, supplier: '', paid: 0, note: '' },
+      { id: 'old', at: '2026-10-01T08:00:00Z', productId: 'rice', productName: 'Bismati', quantity: 2, remaining: 2, unitCost: 30000, supplier: '', paid: 0, note: '' }
+    ]);
+
+    await recordStockLoss({ productId: 'rice', quantity: 4, reason: 'Damaged', note: 'Water damage' });
+
+    expect(get(products).find((product) => product.id === 'rice')?.stock).toBe(8);
+    expect(get(stockEntries).find((entry) => entry.id === 'old')?.remaining).toBe(0);
+    expect(get(stockEntries).find((entry) => entry.id === 'new')?.remaining).toBe(1);
+    expect(get(stockLosses)[0]).toMatchObject({ productName: 'Bismati', quantity: 4, cost: 140000, reason: 'Damaged' });
+    expect(get(activities)[0].action).toBe('Stock loss recorded');
+  });
+
+  it('does not allow a stock loss above the available quantity', async () => {
+    await expect(recordStockLoss({ productId: 'sugar', quantity: 7, reason: 'Missing', note: '' })).rejects.toThrow('Only 6');
+    expect(get(products).find((product) => product.id === 'sugar')?.stock).toBe(6);
   });
 });
 

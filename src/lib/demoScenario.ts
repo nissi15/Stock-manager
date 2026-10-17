@@ -1,5 +1,5 @@
 import { today } from './format';
-import type { Activity, BusinessDay, Expense, Payment, Product, Sale, StockEntry } from './types';
+import type { Activity, BusinessDay, Expense, Payment, Product, Sale, StockEntry, StockLoss } from './types';
 
 const catalog = [
   { id: 'rice-tanzanian', name: 'Tanzanian', category: 'Rice', unit: '25 kg sack', price: 48000, unitCost: 37000, openingStock: 90 },
@@ -20,7 +20,7 @@ const expenseKinds = [
   { category: 'Transport', description: 'Delivery van', amount: 12000 },
   { category: 'Wages', description: 'Daily loading team', amount: 15000 },
   { category: 'Utilities', description: 'Shop utilities', amount: 8000 },
-  { category: 'Loss', description: 'Damaged packaging', amount: 5000 }
+  { category: 'Packaging', description: 'Packing materials', amount: 5000 }
 ] as const;
 
 function dateOffset(referenceDate: string, offset: number) {
@@ -49,6 +49,7 @@ export function generateDemoScenario(referenceDate = today()) {
   const sales: Sale[] = [];
   const stockEntries: StockEntry[] = [];
   const expenses: Expense[] = [];
+  const stockLosses: StockLoss[] = [];
   const activities: Activity[] = [];
   const batches = new Map<string, { remaining: number; unitCost: number }[]>(catalog.map((item) => [item.id, []]));
   let saleNumber = 0;
@@ -59,9 +60,10 @@ export function generateDemoScenario(referenceDate = today()) {
 
   function receive(item: (typeof catalog)[number], quantity: number, at: string, id: string, supplier: string) {
     const paid = Math.floor(quantity * item.unitCost * (id.startsWith('opening') ? 1 : 0.5));
-    stockEntries.unshift({ id, at, productId: item.id, productName: item.name, quantity, unitCost: item.unitCost, supplier, paid, note: id.startsWith('opening') ? 'Opening stock' : 'Regular delivery' });
+    const entry: StockEntry = { id, at, productId: item.id, productName: item.name, quantity, remaining: quantity, unitCost: item.unitCost, supplier, paid, note: id.startsWith('opening') ? 'Opening stock' : 'Regular delivery' };
+    stockEntries.unshift(entry);
     products.find((product) => product.id === item.id)!.stock += quantity;
-    batches.get(item.id)!.push({ remaining: quantity, unitCost: item.unitCost });
+    batches.get(item.id)!.push(entry);
     log(id, at, 'Stock received', `${quantity} × ${item.name} · ${item.category}`);
   }
 
@@ -118,5 +120,5 @@ export function generateDemoScenario(referenceDate = today()) {
   }
 
   const businessDay: BusinessDay = { date: referenceDate, status: 'open', openedAt: `${referenceDate}T07:00:00.000Z` };
-  return { products, sales, stockEntries, expenses, activities, businessDay };
+  return { products, sales, stockEntries, expenses, stockLosses, activities, businessDay };
 }

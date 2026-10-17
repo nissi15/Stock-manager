@@ -1,5 +1,5 @@
 import { get, writable } from 'svelte/store';
-import type { Activity, BusinessDay, Expense, Product, Sale, StockEntry, CartLine, Payment } from './types';
+import type { Activity, BusinessDay, Expense, Product, Sale, StockEntry, CartLine, Payment, StockLoss, StockLossReason } from './types';
 import { today } from './format';
 import { supabase } from './supabase';
 import { generateDemoScenario } from './demoScenario';
@@ -10,11 +10,12 @@ export const products = writable<Product[]>(demo?.products ?? []);
 export const sales = writable<Sale[]>(demo?.sales ?? []);
 export const stockEntries = writable<StockEntry[]>(demo?.stockEntries ?? []);
 export const expenses = writable<Expense[]>(demo?.expenses ?? []);
+export const stockLosses = writable<StockLoss[]>(demo?.stockLosses ?? []);
 export const activities = writable<Activity[]>(demo?.activities ?? []);
 export const businessDay = writable<BusinessDay | null>(demo?.businessDay ?? null);
 export const ready = writable(false);
 export const online = writable(typeof navigator === 'undefined' ? true : navigator.onLine);
-const key = 'stock-manager-demo-v2';
+const key = 'stock-manager-demo-v3';
 const id = () => crypto.randomUUID();
 const audit = (action: string, detail: string) => activities.update((all) => [{ id: id(), at: new Date().toISOString(), action, detail }, ...all]);
 
@@ -28,12 +29,13 @@ export function initStore() {
       sales.set(data.sales ?? []);
       stockEntries.set(data.stockEntries ?? []);
       expenses.set(data.expenses ?? []);
+      stockLosses.set(data.stockLosses ?? []);
       activities.set(data.activities ?? []);
       businessDay.set(data.businessDay ?? null);
     } catch { /* A corrupt demo cache starts fresh. */ }
   }
   if (isDemo) {
-    for (const store of [products, sales, stockEntries, expenses, activities, businessDay]) store.subscribe(persist);
+    for (const store of [products, sales, stockEntries, expenses, stockLosses, activities, businessDay]) store.subscribe(persist);
   }
   window.addEventListener('online', () => { online.set(true); void syncQueuedSales(); });
   window.addEventListener('offline', () => online.set(false));
@@ -42,18 +44,19 @@ export function initStore() {
 
 function persist() {
   if (!isDemo || typeof localStorage === 'undefined' || !get(ready)) return;
-  localStorage.setItem(key, JSON.stringify({ products: get(products), sales: get(sales), stockEntries: get(stockEntries), expenses: get(expenses), activities: get(activities), businessDay: get(businessDay) }));
+  localStorage.setItem(key, JSON.stringify({ products: get(products), sales: get(sales), stockEntries: get(stockEntries), expenses: get(expenses), stockLosses: get(stockLosses), activities: get(activities), businessDay: get(businessDay) }));
 }
 
 export async function refresh() {
   if (!supabase) return;
-  const [p, s, e, a, d, b] = await Promise.all([
+  const [p, s, e, a, d, b, l] = await Promise.all([
     supabase.from('products').select('*').order('name'),
     supabase.from('sales').select('*, sale_lines(*), payments(*)').order('created_at', { ascending: false }).limit(500),
     supabase.from('expenses').select('*').order('created_at', { ascending: false }).limit(500),
     supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(500),
     supabase.from('business_days').select('*').order('date', { ascending: false }).limit(1),
-    supabase.from('stock_batches').select('*, products(name)').order('received_at', { ascending: false }).limit(500)
+    supabase.from('stock_batches').select('*, products(name)').order('received_at', { ascending: false }).limit(500),
+    supabase.from('stock_losses').select('*, products(name,unit)').order('created_at', { ascending: false }).limit(500)
   ]);
   if (p.error) throw p.error;
   products.set((p.data ?? []).map((row) => ({ id: row.id, name: row.name, category: row.category, unit: row.unit, stock: row.stock, price: row.price, active: row.active })));
@@ -61,7 +64,8 @@ export async function refresh() {
   if (!e.error) expenses.set((e.data ?? []).map((row) => ({ id: row.id, at: row.created_at, category: row.category, description: row.description, amount: row.amount, method: row.method })));
   if (!a.error) activities.set((a.data ?? []).map((row) => ({ id: row.id, at: row.created_at, action: row.action, detail: row.detail })));
   if (!d.error && d.data?.[0]) { const row = d.data[0]; businessDay.set({ date: row.date, status: row.status, openedAt: row.opened_at, closedAt: row.closed_at }); }
-  if (!b.error) stockEntries.set((b.data ?? []).map((row) => ({ id: row.id, at: row.received_at, productId: row.product_id, productName: row.products?.name ?? '', quantity: row.quantity, unitCost: row.unit_cost, supplier: row.supplier, paid: row.paid, note: row.note })));
+  if (!b.error) stockEntries.set((b.data ?? []).map((row) => ({ id: row.id, at: row.received_at, productId: row.product_id, productName: row.products?.name ?? '', quantity: row.quantity, remaining: row.remaining, unitCost: row.unit_cost, supplier: row.supplier, paid: row.paid, note: row.note })));
+  if (!l.error) stockLosses.set((l.data ?? []).map((row) => ({ id: row.id, at: row.created_at, productId: row.product_id, productName: row.products?.name ?? '', unit: row.products?.unit ?? '', quantity: row.quantity, cost: row.cost, reason: row.reason, note: row.note })) as StockLoss[]);
 }
 
 export async function openDay(prices: Record<string, number>) {
@@ -165,7 +169,7 @@ export async function addStock(input: { productId: string; quantity: number; uni
   if (input.quantity <= 0 || input.unitCost < 0 || input.paid < 0 || input.paid > input.quantity * input.unitCost) throw new Error('Check stock quantity, cost and payment.');
   if (supabase) { const { error } = await supabase.rpc('receive_stock', { p_product_id: input.productId, p_quantity: input.quantity, p_unit_cost: input.unitCost, p_supplier: input.supplier, p_paid: input.paid, p_note: input.note }); if (error) throw error; await refresh(); return; }
   const product = get(products).find((p) => p.id === input.productId);
-  stockEntries.update((all) => [{ id: id(), at: new Date().toISOString(), productName: product?.name ?? '', ...input }, ...all]);
+  stockEntries.update((all) => [{ id: id(), at: new Date().toISOString(), productName: product?.name ?? '', remaining: input.quantity, ...input }, ...all]);
   products.update((all) => all.map((p) => p.id === input.productId ? { ...p, stock: p.stock + input.quantity } : p));
   audit('Stock received', `${input.quantity} × ${product?.name} from ${input.supplier || 'unspecified supplier'}`);
 }
@@ -182,6 +186,36 @@ export async function addExpense(input: Omit<Expense, 'id' | 'at'>) {
   if (supabase) { const { error } = await supabase.from('expenses').insert(input); if (error) throw error; await refresh(); return; }
   expenses.update((all) => [{ ...input, id: id(), at: new Date().toISOString() }, ...all]);
   audit('Expense recorded', `${input.category} · RWF ${input.amount.toLocaleString()}`);
+}
+
+export async function recordStockLoss(input: { productId: string; quantity: number; reason: StockLossReason; note: string }) {
+  const product = get(products).find((entry) => entry.id === input.productId);
+  if (!product) throw new Error('Choose a product.');
+  if (!Number.isInteger(input.quantity) || input.quantity <= 0) throw new Error('Enter a whole quantity greater than zero.');
+  if (input.quantity > product.stock) throw new Error(`Only ${product.stock} ${product.unit} available.`);
+  if (!['Damaged', 'Expired', 'Stolen', 'Missing', 'Other'].includes(input.reason)) throw new Error('Choose a valid loss reason.');
+  if (supabase) {
+    const { error } = await supabase.rpc('record_stock_loss', { p_product_id: input.productId, p_quantity: input.quantity, p_reason: input.reason, p_note: input.note });
+    if (error) throw error;
+    await refresh();
+    return;
+  }
+  let needed = input.quantity;
+  let cost = 0;
+  const usage = new Map<string, number>();
+  for (const batch of get(stockEntries).filter((entry) => entry.productId === input.productId && entry.remaining > 0).toSorted((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime() || a.id.localeCompare(b.id))) {
+    const used = Math.min(needed, batch.remaining);
+    if (!used) continue;
+    usage.set(batch.id, used);
+    cost += used * batch.unitCost;
+    needed -= used;
+    if (!needed) break;
+  }
+  if (needed) throw new Error(`Missing purchase cost for ${product.name}.`);
+  stockEntries.update((all) => all.map((entry) => usage.has(entry.id) ? { ...entry, remaining: entry.remaining - (usage.get(entry.id) ?? 0) } : entry));
+  products.update((all) => all.map((entry) => entry.id === input.productId ? { ...entry, stock: entry.stock - input.quantity } : entry));
+  stockLosses.update((all) => [{ id: id(), at: new Date().toISOString(), productId: product.id, productName: product.name, unit: product.unit, quantity: input.quantity, cost, reason: input.reason, note: input.note.trim() }, ...all]);
+  audit('Stock loss recorded', `${input.quantity} × ${product.name} · ${input.reason} · RWF ${cost.toLocaleString()}`);
 }
 
 // IndexedDB keeps unsynced sales durable even if the tab closes.

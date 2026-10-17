@@ -235,3 +235,23 @@ td.strong{color:#050607;font-weight:700}
 @media(max-width:1500px){.trend-card{grid-column:span 1}.attention-card{grid-column:span 1}}
 @media(max-width:600px){.trend-card,.attention-card{grid-column:span 1}.trend-chart{height:215px;gap:3px;padding:15px 0 0}.trend-track{height:150px}.trend-bar{width:65%}.trend-label{font-size:9px}.trend-value{font-size:8px}}
 .price-list .money-input input{color:#000}
+.expense-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:16px}
+.expense-entry-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:16px;margin-bottom:16px}
+.expense-history{margin-top:0}
+.stock-loss-callout{display:flex;flex-direction:column;align-items:flex-start;gap:18px;background:#fffdfa}
+.stock-loss-callout>div{display:flex;flex-direction:column;gap:9px}.stock-loss-callout p{color:#30353b;font-size:13px;line-height:1.55}
+.stock-loss-callout .secondary{margin-top:auto}
+.loss-icon{width:46px;height:46px;display:grid;place-items:center;border-radius:13px;background:#fff2dc;color:#a45c00}
+.damage-button{color:#8b4e00}
+.damage-note{display:flex;align-items:flex-start;gap:11px;padding:13px;border:1px solid #f1d7ad;border-radius:9px;background:#fffaf1;color:#915800}
+.damage-note>span{display:flex;flex-direction:column;gap:4px}.damage-note strong{font-size:13px}.damage-note small{color:#5f4c31;font-size:11px;font-weight:500;line-height:1.45}
+.damage-error{padding:11px 12px;border-radius:8px;background:#fff0ed;color:#a32921;font-size:12px;font-weight:600;line-height:1.45}
+.report-grid{grid-template-columns:repeat(5,minmax(0,1fr));align-items:start}
+.trend-card{grid-column:span 3}.loss-report-card{grid-column:span 2;display:flex;flex-direction:column}.attention-card{grid-column:span 2}.report-wide{grid-column:span 3}
+.loss-summary{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px}
+.loss-summary>span{display:flex;flex-direction:column;gap:7px;padding:13px;border:1px solid #eceef0;border-radius:10px}
+.loss-summary small{color:#343a41;font-size:11px;font-weight:600}.loss-summary strong{font-size:17px}
+.compact-empty{min-height:110px}
+@media(max-width:1500px){.expense-summary-grid{grid-template-columns:repeat(2,1fr)}.report-grid{grid-template-columns:repeat(2,1fr)}.metric.profit,.trend-card,.report-wide{grid-column:1/-1}.loss-report-card,.attention-card{grid-column:span 1}}
+@media(max-width:850px){.expense-entry-grid{grid-template-columns:1fr}}
+@media(max-width:600px){.expense-summary-grid,.report-grid{grid-template-columns:1fr}.metric.profit,.trend-card,.loss-report-card,.attention-card,.report-wide{grid-column:span 1}.loss-summary{grid-template-columns:1fr}}
