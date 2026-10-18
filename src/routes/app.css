@@ -304,3 +304,63 @@ td.strong{color:#050607;font-weight:700}
   .rail.expanded+.workspace,.workspace{width:calc(100% - 54px);padding:0 10px 16px}
   .sales-filters,.sales-filters.inventory-filters{grid-template-columns:1fr}
 }
+
+/* Date-range reporting workspace */
+.range-filters{grid-template-columns:minmax(140px,.8fr) minmax(140px,.8fr) minmax(160px,1fr) minmax(150px,1fr) minmax(145px,.9fr) auto}
+.inventory-filters{grid-template-columns:repeat(5,minmax(135px,1fr))}
+.activity-filters{grid-template-columns:minmax(145px,1fr) minmax(145px,1fr) minmax(155px,1fr) auto}
+.report-workspace{display:flex;flex-direction:column;gap:16px}
+.report-controls{padding-bottom:20px}
+.report-controls .section-heading{margin-bottom:20px}
+.report-period{align-self:flex-start;border:1px solid #dfe3e8;border-radius:999px;background:#f7f8fa;padding:7px 11px;color:#24292f;font-size:12px;font-weight:650;white-space:nowrap}
+.report-tabs{margin-bottom:18px}
+.date-range-bar{display:grid;grid-template-columns:minmax(165px,220px) minmax(165px,220px) 1fr;gap:12px;align-items:end}
+.date-range-bar label{display:flex;flex-direction:column;gap:6px;color:#262b31;font-size:11px;font-weight:700}
+.date-range-bar input{height:41px;padding:0 11px;border:1px solid #d9dee4;border-radius:8px;background:#fff;color:#111418;font-size:13px;font-weight:550}
+.range-presets{display:flex;justify-content:flex-end;gap:8px}
+.range-presets .secondary{height:41px}
+.report-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.report-formula h2{margin-bottom:20px}
+.formula-flow{display:grid;grid-template-columns:minmax(145px,1fr) auto minmax(145px,1fr) auto minmax(145px,1fr) auto minmax(145px,1fr);gap:12px;align-items:center}
+.formula-flow>span{min-height:116px;display:flex;flex-direction:column;justify-content:center;gap:7px;padding:18px;border:1px solid #e4e7eb;border-radius:11px;background:#fafbfc}
+.formula-flow>b{color:#69717a;font-size:20px;text-align:center}
+.formula-flow small{color:#555e68;font-size:11px;font-weight:650}
+.formula-flow strong{font-size:21px;letter-spacing:-.035em}
+.formula-flow em{color:#666f79;font-size:11px;font-style:normal}
+.formula-flow .formula-result{border-color:#bcd5fa;background:#eff6ff}
+.report-trend-card{grid-column:auto}
+.trend-scroll{overflow-x:auto;overscroll-behavior-inline:contain}
+.batch-report-card .table-wrap{margin:0 -8px;padding:0 8px}
+.batch-profit-table{min-width:1370px}
+.table-subline{display:block;margin-top:5px;color:#555e68;font-size:11px;font-weight:500}
+.report-loading{padding:38px 0;text-align:center}
+.cash-loss-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+.account-flow-list{display:flex;flex-direction:column}
+.account-flow-list>div{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:19px 0;border-bottom:1px solid #eceef1}
+.account-flow-list>div>span{display:flex;flex-direction:column;gap:5px}
+.account-flow-list small{color:#4c555f;font-size:12px;font-weight:500}
+.account-flow-list>div>strong{font-size:17px;white-space:nowrap}
+
+@media(max-width:1240px){
+  .range-filters,.inventory-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .report-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .formula-flow{grid-template-columns:1fr;gap:7px}
+  .formula-flow>b{line-height:1;transform:rotate(90deg)}
+  .formula-flow>span{min-height:90px}
+}
+
+@media(max-width:850px){
+  .activity-filters{grid-template-columns:1fr 1fr}
+  .date-range-bar{grid-template-columns:1fr 1fr}
+  .range-presets{grid-column:1/-1;justify-content:flex-start;flex-wrap:wrap}
+  .cash-loss-grid{grid-template-columns:1fr}
+}
+
+@media(max-width:600px){
+  .range-filters,.inventory-filters,.activity-filters,.report-summary-grid,.date-range-bar{grid-template-columns:1fr}
+  .range-presets{grid-column:auto;display:grid;grid-template-columns:repeat(3,1fr)}
+  .range-presets .secondary{justify-content:center;padding:0 8px}
+  .report-controls{padding-bottom:16px}
+  .report-period{white-space:normal}
+  .formula-flow>span{min-height:82px;padding:14px}
+}

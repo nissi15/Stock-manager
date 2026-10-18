@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { ArrowRight, BarChart3, Box, ChevronRight, Clock3, CreditCard, FileText, MailCheck, Menu, Package, Plus, Search, ShoppingCart, Trash2, TriangleAlert, Wallet, X } from '@lucide/svelte';
-  import { activities, addExpense, addProduct, addStock, businessDay, closeDay, createSale, expenses, initStore, isDemo, online, openDay, products, recordStockLoss, sales, stockEntries, stockLosses, refresh, reopenDay, updateDailyPrices, updateSale } from '../lib/store';
+  import { activities, addExpense, addProduct, addStock, businessDay, closeDay, createSale, expenses, initStore, isDemo, loadBatchProfitReport, online, openDay, products, recordStockLoss, sales, stockEntries, stockLosses, refresh, reopenDay, updateDailyPrices, updateSale } from '../lib/store';
   import { compactMoney, money, rwf, shortDate, today } from '../lib/format';
   import { supabase } from '../lib/supabase';
-  import type { CartLine, PaymentMethod, Product, Sale, StockEntry, StockLossReason } from '../lib/types';
+  import type { BatchProfit, CartLine, PaymentMethod, Product, Sale, StockEntry, StockLossReason } from '../lib/types';
 
   type Page = 'sale' | 'sales' | 'inventory' | 'expenses' | 'reports' | 'activity';
   let page: Page = $state('sale');
@@ -23,7 +23,8 @@
   let inventoryTab: 'products' | 'history' | 'balances' = $state('products');
   let productSort = $state<'name-asc' | 'name-desc' | 'category' | 'stock-low' | 'stock-high' | 'price-low' | 'price-high'>('name-asc');
   let stockSort = $state<'newest' | 'oldest' | 'category' | 'product-asc' | 'product-desc' | 'cost-high'>('newest');
-  let stockDate = $state('');
+  let stockFrom = $state('');
+  let stockTo = $state('');
   let stockCategory = $state('all');
   let stockProduct = $state('all');
   let balanceSort = $state<'supplier' | 'due-high'>('supplier');
@@ -32,10 +33,20 @@
   let productDrawer = $state(false);
   let selectedSale = $state<Sale | null>(null);
   let editingSale = $state(false);
-  let salesDate = $state(today());
+  let salesFrom = $state(today());
+  let salesTo = $state(today());
   let salesCategory = $state('all');
   let salesPayment = $state<'all' | PaymentMethod>('all');
   let salesOrder = $state<'newest' | 'oldest'>('newest');
+  let reportTab: 'overview' | 'batches' | 'cash' = $state('overview');
+  let reportFrom = $state(dateOffset(today(), -6));
+  let reportTo = $state(today());
+  let batchProfitRows: BatchProfit[] = $state([]);
+  let batchReportLoading = $state(false);
+  let batchReportError = $state('');
+  let activityFrom = $state(dateOffset(today(), -6));
+  let activityTo = $state(today());
+  let activityOrder: 'newest' | 'oldest' = $state('newest');
   let saleLinesDraft: CartLine[] = $state([]);
   let salePaymentDraft: Record<PaymentMethod, number> = $state({ cash: 0, momo: 0, bank: 0 });
   let stockForm = $state({ productId: '', quantity: 1, unitCost: 0, supplier: '', paid: 0, note: '' });
@@ -70,27 +81,36 @@
   let remaining = $derived(Math.max(0, total - paid));
   let canConfirm = $derived(cart.length > 0 && !hasStockIssue && remaining === 0 && paid === total && !working);
   let dayIsOpen = $derived($businessDay?.status === 'open' && $businessDay?.date === today());
-  let daySales = $derived($sales.filter((s) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kigali' }).format(new Date(s.at)) === today()));
   let productCategories = $derived([...new Set($products.map((product) => product.category))].sort());
   let visibleSales = $derived.by(() => $sales
-    .filter((sale) => !salesDate || new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kigali' }).format(new Date(sale.at)) === salesDate)
+    .filter((sale) => inDateRange(sale.at, salesFrom, salesTo))
     .filter((sale) => salesCategory === 'all' || sale.lines.some((line) => $products.find((product) => product.id === line.productId)?.category === salesCategory))
     .filter((sale) => salesPayment === 'all' || sale.payments.some((payment) => payment.method === salesPayment))
     .toSorted((a, b) => salesOrder === 'newest' ? new Date(b.at).getTime() - new Date(a.at).getTime() : new Date(a.at).getTime() - new Date(b.at).getTime()));
   let dayExpenses = $derived($expenses.filter((e) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kigali' }).format(new Date(e.at)) === today()));
-  let dayStockLosses = $derived($stockLosses.filter((entry) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kigali' }).format(new Date(entry.at)) === today()));
   let recentDayExpenses = $derived([...dayExpenses].toSorted((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 8));
-  let revenue = $derived(daySales.reduce((sum, s) => sum + s.total, 0));
-  let cost = $derived(daySales.reduce((sum, s) => sum + s.cost, 0));
   let expenseTotal = $derived(dayExpenses.reduce((sum, e) => sum + e.amount, 0));
-  let stockLossTotal = $derived(dayStockLosses.reduce((sum, entry) => sum + entry.cost, 0));
-  let tradingLossTotal = $derived(daySales.reduce((sum, sale) => sum + Math.max(0, sale.cost - sale.total), 0));
-  let profit = $derived(revenue - cost - expenseTotal - stockLossTotal);
-  let profitVerified = $derived(!isDemo && daySales.every((s) => !s.hasCostDeficit && s.source === 'supabase'));
+  let reportSales = $derived($sales.filter((sale) => inDateRange(sale.at, reportFrom, reportTo)));
+  let reportExpenses = $derived($expenses.filter((expense) => inDateRange(expense.at, reportFrom, reportTo)));
+  let reportStockLosses = $derived($stockLosses.filter((entry) => inDateRange(entry.at, reportFrom, reportTo)));
+  let reportRevenue = $derived(reportSales.reduce((sum, sale) => sum + sale.total, 0));
+  let reportCost = $derived(reportSales.reduce((sum, sale) => sum + sale.cost, 0));
+  let reportGrossProfit = $derived(reportRevenue - reportCost);
+  let reportExpenseTotal = $derived(reportExpenses.reduce((sum, expense) => sum + expense.amount, 0));
+  let reportStockLossTotal = $derived(reportStockLosses.reduce((sum, entry) => sum + entry.cost, 0));
+  let reportTradingLossTotal = $derived(reportSales.reduce((sum, sale) => sum + Math.max(0, sale.cost - sale.total), 0));
+  let reportProfit = $derived(reportGrossProfit - reportExpenseTotal - reportStockLossTotal);
+  let profitVerified = $derived(reportSales.every((sale) => !sale.hasCostDeficit));
+  let reportTrend = $derived(buildTrend(reportSales, reportFrom, reportTo));
+  let reportTrendMax = $derived(Math.max(1, ...reportTrend.map((period) => period.amount)));
+  let reportRangeLabel = $derived(formatRange(reportFrom, reportTo));
+  let visibleActivities = $derived.by(() => $activities
+    .filter((item) => inDateRange(item.at, activityFrom, activityTo))
+    .toSorted((a, b) => activityOrder === 'newest' ? new Date(b.at).getTime() - new Date(a.at).getTime() : new Date(a.at).getTime() - new Date(b.at).getTime()));
   let balances = $derived([...new Set($stockEntries.map((entry) => entry.supplier).filter(Boolean))].map((supplier) => ({ supplier, due: $stockEntries.filter((e) => e.supplier === supplier).reduce((sum, e) => sum + e.quantity * e.unitCost - e.paid, 0) })));
   let sortedProducts = $derived.by(() => [...$products].sort((a, b) => productSort === 'name-desc' ? b.name.localeCompare(a.name) : productSort === 'category' ? a.category.localeCompare(b.category) || a.name.localeCompare(b.name) : productSort === 'stock-low' ? a.stock - b.stock : productSort === 'stock-high' ? b.stock - a.stock : productSort === 'price-low' ? a.price - b.price : productSort === 'price-high' ? b.price - a.price : a.name.localeCompare(b.name)));
   let sortedStockEntries = $derived.by(() => $stockEntries
-    .filter((entry) => !stockDate || new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kigali' }).format(new Date(entry.at)) === stockDate)
+    .filter((entry) => inDateRange(entry.at, stockFrom, stockTo))
     .filter((entry) => stockCategory === 'all' || ($products.find((product) => product.id === entry.productId)?.category ?? '') === stockCategory)
     .filter((entry) => stockProduct === 'all' || entry.productId === stockProduct)
     .toSorted((a, b) => {
@@ -102,20 +122,59 @@
     return new Date(b.at).getTime() - new Date(a.at).getTime();
   }));
   let sortedBalances = $derived.by(() => [...balances].sort((a, b) => balanceSort === 'due-high' ? b.due - a.due : a.supplier.localeCompare(b.supplier)));
-  let weekTrend = $derived.by(() => Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(`${today()}T12:00:00Z`);
-    date.setUTCDate(date.getUTCDate() - (6 - index));
-    const key = date.toISOString().slice(0, 10);
-    return { label: new Intl.DateTimeFormat('en', { weekday: 'short', timeZone: 'Africa/Kigali' }).format(date), amount: $sales.filter((sale) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kigali' }).format(new Date(sale.at)) === key).reduce((sum, sale) => sum + sale.total, 0) };
-  }));
-  let weekMax = $derived(Math.max(1, ...weekTrend.map((day) => day.amount)));
   let lowStock = $derived($products.filter((product) => product.active && product.stock < 10));
   let selectedSaleIsEditable = $derived(!!selectedSale && dayIsOpen && new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kigali' }).format(new Date(selectedSale.at)) === today());
   let saleDraftTotal = $derived(saleLinesDraft.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0));
   let saleDraftPaid = $derived(salePaymentDraft.cash + salePaymentDraft.momo + salePaymentDraft.bank);
   let damageEstimate = $derived(estimateStockLoss(damageForm.productId, damageForm.quantity));
 
+  let batchRequest = 0;
+  $effect(() => {
+    if (!authenticated || page !== 'reports' || reportTab !== 'batches') return;
+    const request = ++batchRequest;
+    const from = reportFrom;
+    const to = reportTo;
+    batchReportLoading = true;
+    batchReportError = '';
+    void loadBatchProfitReport(from, to).then((rows) => {
+      if (request === batchRequest) batchProfitRows = rows;
+    }).catch((reason) => {
+      if (request === batchRequest) batchReportError = message(reason);
+    }).finally(() => {
+      if (request === batchRequest) batchReportLoading = false;
+    });
+  });
+
   function selectPage(value: Page) { page = value; error = ''; paymentOpen = false; }
+  function localDate(value: string) { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kigali' }).format(new Date(value)); }
+  function dateOffset(value: string, offset: number) { const date = new Date(`${value}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + offset); return date.toISOString().slice(0, 10); }
+  function inDateRange(value: string, from: string, to: string) { const date = localDate(value); return (!from || date >= from) && (!to || date <= to); }
+  function formatRange(from: string, to: string) {
+    const format = (value: string) => new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${value}T12:00:00Z`));
+    if (!from && !to) return 'All dates';
+    if (from && to && from === to) return format(from);
+    return `${from ? format(from) : 'Beginning'} – ${to ? format(to) : 'Today'}`;
+  }
+  function buildTrend(records: Sale[], from: string, to: string) {
+    if (!from || !to || from > to) return [];
+    const start = new Date(`${from}T12:00:00Z`);
+    const end = new Date(`${to}T12:00:00Z`);
+    const days = Math.floor((end.getTime() - start.getTime()) / 86400000) + 1;
+    if (days <= 31) return Array.from({ length: days }, (_, index) => {
+      const date = new Date(start);
+      date.setUTCDate(date.getUTCDate() + index);
+      const key = date.toISOString().slice(0, 10);
+      return { key, label: new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(date), amount: records.filter((sale) => localDate(sale.at) === key).reduce((sum, sale) => sum + sale.total, 0) };
+    });
+    const totals = new Map<string, number>();
+    for (const sale of records) { const key = localDate(sale.at).slice(0, 7); totals.set(key, (totals.get(key) ?? 0) + sale.total); }
+    const months: { key: string; label: string; amount: number }[] = [];
+    const cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1, 12));
+    const finalMonth = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1, 12));
+    while (cursor <= finalMonth) { const key = cursor.toISOString().slice(0, 7); months.push({ key, label: new Intl.DateTimeFormat('en', { month: 'short', year: '2-digit', timeZone: 'UTC' }).format(cursor), amount: totals.get(key) ?? 0 }); cursor.setUTCMonth(cursor.getUTCMonth() + 1); }
+    return months;
+  }
+  function setReportRange(days: number) { reportTo = today(); reportFrom = dateOffset(reportTo, 1 - days); }
   function addToCart(product: Product) {
     if (!dayIsOpen) { startDay(); return; }
     const existing = cart.find((line) => line.productId === product.id);
@@ -160,10 +219,10 @@
   function changeAuthMode(mode: 'signin' | 'signup' | 'reset') { authMode = mode; error = ''; success = ''; }
   async function signOut() { if (supabase) await supabase.auth.signOut(); }
   function message(e: unknown) { return e instanceof Error ? e.message : String(e); }
-  function batchReference(entry: StockEntry) { const stamp = entry.at.replace(/\D/g, '').slice(0, 12); const suffix = entry.id.replace(/[^a-z0-9]/gi, '').slice(-5).toUpperCase(); return `BAT-${stamp}-${suffix}`; }
+  function batchReference(entry: Pick<StockEntry, 'id' | 'at'>) { const stamp = entry.at.replace(/\D/g, '').slice(0, 12); const suffix = entry.id.replace(/[^a-z0-9]/gi, '').slice(-5).toUpperCase(); return `BAT-${stamp}-${suffix}`; }
   function stockCategoryFor(entry: StockEntry) { return $products.find((product) => product.id === entry.productId)?.category ?? '—'; }
   function estimateStockLoss(productId: string, quantity: number) { let needed = Math.max(0, Math.round(quantity || 0)); let cost = 0; for (const batch of $stockEntries.filter((entry) => entry.productId === productId && entry.remaining > 0).toSorted((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime() || a.id.localeCompare(b.id))) { const used = Math.min(needed, batch.remaining); cost += used * batch.unitCost; needed -= used; if (!needed) break; } return { cost, missing: needed }; }
-  function exportCsv() { const rows = [['Date', 'Sale ID', 'Total RWF', 'Cost RWF', 'Profit RWF', 'Payments'], ...$sales.map((s) => [s.at, s.id, s.total, s.cost, s.total - s.cost, s.payments.map((p) => `${p.method}:${p.amount}`).join(' | ')])]; const csv = rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(',')).join('\n'); const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); const a = document.createElement('a'); a.href = url; a.download = `sales-${today()}.csv`; a.click(); URL.revokeObjectURL(url); }
+  function exportCsv() { const rows = [['Date', 'Sale ID', 'Total RWF', 'Cost RWF', 'Profit RWF', 'Payments'], ...visibleSales.map((s) => [s.at, s.id, s.total, s.cost, s.total - s.cost, s.payments.map((p) => `${p.method}:${p.amount}`).join(' | ')])]; const csv = rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(',')).join('\n'); const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); const a = document.createElement('a'); a.href = url; a.download = `sales-${salesFrom || 'start'}-to-${salesTo || 'latest'}.csv`; a.click(); URL.revokeObjectURL(url); }
   function pointerDown(event: PointerEvent) { if (!canConfirm) return; dragging = true; sliderElement.setPointerCapture(event.pointerId); pointerMove(event); }
   function pointerMove(event: PointerEvent) { if (!dragging) return; const rect = sliderElement.getBoundingClientRect(); dragProgress = Math.max(0, Math.min(1, (event.clientX - rect.left - 27) / (rect.width - 54))); }
   function pointerUp() { if (!dragging) return; dragging = false; if (dragProgress > 0.88) { dragProgress = 1; void finishSale(); } else dragProgress = 0; }
@@ -214,7 +273,8 @@
         <div class="tabs"><button class:chosen={inventoryTab === 'products'} onclick={() => inventoryTab = 'products'}>Products</button><button class:chosen={inventoryTab === 'history'} onclick={() => inventoryTab = 'history'}>Stock history</button><button class:chosen={inventoryTab === 'balances'} onclick={() => inventoryTab = 'balances'}>Supplier balances</button></div>
         {#if inventoryTab === 'history'}
           <div class="sales-filters inventory-filters">
-            <label><span>Date</span><input type="date" bind:value={stockDate} /></label>
+            <label><span>From</span><input type="date" max={stockTo || undefined} bind:value={stockFrom} /></label>
+            <label><span>To</span><input type="date" min={stockFrom || undefined} bind:value={stockTo} /></label>
             <label><span>Category</span><select bind:value={stockCategory}><option value="all">All categories</option>{#each productCategories as category}<option value={category}>{category}</option>{/each}</select></label>
             <label><span>Product</span><select bind:value={stockProduct}><option value="all">All products</option>{#each [...$products].sort((a, b) => a.name.localeCompare(b.name) || a.unit.localeCompare(b.unit)) as product}<option value={product.id}>{product.name} · {product.unit}</option>{/each}</select></label>
             <label><span>Sort</span><select bind:value={stockSort}><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="category">Category A–Z</option><option value="product-asc">Product A–Z</option><option value="product-desc">Product Z–A</option><option value="cost-high">Highest unit cost</option></select></label>
@@ -235,25 +295,36 @@
         {/if}
       </div>
     {:else if page === 'sales'}
-      <div class="page-card"><div class="section-heading"><div><h2>Sales history</h2><p>Today’s completed sales are shown first.</p></div><button class="secondary" onclick={exportCsv}>Export CSV</button></div><div class="sales-filters"><label><span>Date</span><input type="date" bind:value={salesDate} /></label><label><span>Category</span><select bind:value={salesCategory}><option value="all">All categories</option>{#each productCategories as category}<option value={category}>{category}</option>{/each}</select></label><label><span>Payment</span><select bind:value={salesPayment}><option value="all">All payments</option><option value="cash">Cash</option><option value="momo">MoMo</option><option value="bank">Bank</option></select></label><label><span>Sort</span><select bind:value={salesOrder}><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label><button class="filter-reset" onclick={() => { salesDate = today(); salesCategory = 'all'; salesPayment = 'all'; salesOrder = 'newest'; }}>Today</button></div><div class="results-count">{visibleSales.length} {visibleSales.length === 1 ? 'sale' : 'sales'} shown</div><div class="table-wrap"><table><thead><tr><th>Date & time</th><th>Sale</th><th>Items</th><th>Payment</th><th>Total</th><th>Sync</th></tr></thead><tbody>{#each visibleSales as sale}<tr><td>{shortDate(sale.at)}</td><td><button class="sale-link" onclick={() => showSale(sale)}>#{sale.id.slice(0, 8)}</button></td><td>{sale.lines.map((line) => `${line.quantity} ${line.name}`).join(', ')}</td><td>{sale.payments.map((p) => p.method === 'momo' ? 'MoMo' : p.method).join(' + ')}</td><td class="sale-total">{rwf(sale.total)}</td><td><span class:warning={sale.sync === 'queued'} class="badge">{sale.sync === 'queued' ? 'Queued' : 'Synced'}</span></td></tr>{:else}<tr><td colspan="6" class="empty-cell">No sales match these filters.</td></tr>{/each}</tbody></table></div></div>
+      <div class="page-card"><div class="section-heading"><div><h2>Sales history</h2><p>Choose a date range, then narrow it by category or payment method.</p></div><button class="secondary" onclick={exportCsv}>Export CSV</button></div><div class="sales-filters range-filters"><label><span>From</span><input type="date" max={salesTo || undefined} bind:value={salesFrom} /></label><label><span>To</span><input type="date" min={salesFrom || undefined} bind:value={salesTo} /></label><label><span>Category</span><select bind:value={salesCategory}><option value="all">All categories</option>{#each productCategories as category}<option value={category}>{category}</option>{/each}</select></label><label><span>Payment</span><select bind:value={salesPayment}><option value="all">All payments</option><option value="cash">Cash</option><option value="momo">MoMo</option><option value="bank">Bank</option></select></label><label><span>Sort</span><select bind:value={salesOrder}><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label><button class="filter-reset" onclick={() => { salesFrom = today(); salesTo = today(); salesCategory = 'all'; salesPayment = 'all'; salesOrder = 'newest'; }}>Today</button></div><div class="results-count">{visibleSales.length} {visibleSales.length === 1 ? 'sale' : 'sales'} shown</div><div class="table-wrap"><table><thead><tr><th>Date & time</th><th>Sale</th><th>Items</th><th>Payment</th><th>Total</th><th>Sync</th></tr></thead><tbody>{#each visibleSales as sale}<tr><td>{shortDate(sale.at)}</td><td><button class="sale-link" onclick={() => showSale(sale)}>#{sale.id.slice(0, 8)}</button></td><td>{sale.lines.map((line) => `${line.quantity} ${line.name}`).join(', ')}</td><td>{sale.payments.map((p) => p.method === 'momo' ? 'MoMo' : p.method).join(' + ')}</td><td class="sale-total">{rwf(sale.total)}</td><td><span class:warning={sale.sync === 'queued'} class="badge">{sale.sync === 'queued' ? 'Queued' : 'Synced'}</span></td></tr>{:else}<tr><td colspan="6" class="empty-cell">No sales match this date range and filters.</td></tr>{/each}</tbody></table></div></div>
     {:else if page === 'expenses'}
       <div class="content-grid expense-simple-grid">
         <section class="page-card"><div class="section-heading"><div><h2>Record expense</h2><p>Add today’s operating cost and keep moving.</p></div></div><form class="form-grid" onsubmit={(e) => { e.preventDefault(); void submitExpense(); }}><label>Category<select bind:value={expenseForm.category}><option>Transport</option><option>Wages</option><option>Utilities</option><option>Rent</option><option>Packaging</option><option>Repairs</option><option>Tax</option><option>Other</option></select></label><label>Amount (RWF)<input type="number" min="1" step="1" bind:value={expenseForm.amount} required /></label><label class="wide">Description<input bind:value={expenseForm.description} placeholder="What was this for?" /></label><label>Payment account<select bind:value={expenseForm.method}><option value="cash">Cash</option><option value="momo">MoMo</option><option value="bank">Bank</option></select></label><button class="primary compact" disabled={working}>Save expense <ArrowRight size={18} /></button></form></section>
         <section class="page-card expense-recent-card"><div class="section-heading"><div><h2>Today’s expenses</h2><p>{dayExpenses.length} {dayExpenses.length === 1 ? 'expense' : 'expenses'} recorded</p></div><span class="expense-total-pill">{rwf(expenseTotal)}</span></div><div class="simple-list expense-list">{#each recentDayExpenses as expense}<div><div><strong>{expense.category}</strong><small>{expense.description || 'No description'} · {expense.method === 'momo' ? 'MoMo' : expense.method[0].toUpperCase() + expense.method.slice(1)}</small></div><strong>{rwf(expense.amount)}</strong></div>{:else}<div class="expense-empty"><span class="empty-icon"><CreditCard size={22} /></span><p>No expenses recorded today.</p></div>{/each}</div></section>
       </div>
     {:else if page === 'reports'}
-      <div class="report-grid">
-        <div class="metric"><span>Sales today</span><strong>{rwf(revenue)}</strong><small>{daySales.length} completed sales</small></div>
-        <div class="metric"><span>Cost of goods</span><strong>{rwf(cost)}</strong><small>FIFO cost when connected</small></div>
-        <div class="metric"><span>Operating expenses</span><strong>{rwf(expenseTotal)}</strong><small>{dayExpenses.length} recorded expenses</small></div>
-        <div class="metric"><span>Stock losses</span><strong>{rwf(stockLossTotal)}</strong><small>{dayStockLosses.length} FIFO adjustments</small></div>
-        <div class="metric profit"><span>Estimated net profit</span><strong>{profitVerified ? rwf(profit) : 'Pending cost'}</strong><small>{profitVerified ? 'Sales − COGS − expenses − stock loss' : 'Profit needs verified purchase costs'}</small></div>
-        <section class="page-card trend-card"><div class="section-heading"><div><h2>Sales trend</h2><p>Daily revenue over the last 7 days.</p></div><span class="count-pill">7 days</span></div><div class="trend-chart" aria-label="Sales revenue over the last 7 days">{#each weekTrend as day}<div class="trend-column" title={rwf(day.amount)}><span class="trend-value">{day.amount > 0 ? compactMoney(day.amount) : ''}</span><div class="trend-track"><div class="trend-bar" style={`height:${day.amount > 0 ? Math.max(5, day.amount / weekMax * 100) : 0}%`}></div></div><span class="trend-label">{day.label}</span></div>{/each}</div>{#if weekTrend.every((day) => day.amount === 0)}<p class="chart-empty">No sales recorded in the last 7 days.</p>{/if}</section>
-        <section class="page-card loss-report-card"><div class="section-heading"><div><h2>Stock and trading losses</h2><p>Automatically calculated from FIFO costs.</p></div><span class="count-pill">{dayStockLosses.length} adjustments</span></div><div class="loss-summary"><span><small>Damaged or missing stock</small><strong>{rwf(stockLossTotal)}</strong></span><span><small>Sales below FIFO cost</small><strong>{rwf(tradingLossTotal)}</strong></span></div>{#each dayStockLosses.slice(0, 4) as entry}<div class="attention-row"><span><strong>{entry.productName}</strong><small>{entry.quantity} × {entry.unit} · {entry.reason}</small></span><strong>{rwf(entry.cost)}</strong></div>{:else}<div class="attention-empty compact-empty"><span class="empty-icon"><TriangleAlert size={22} /></span><p>No stock losses recorded today.</p></div>{/each}<button class="text-link" onclick={openDamageDrawer}>Record stock damage <ArrowRight size={15} /></button></section>
-        <section class="page-card attention-card"><div class="section-heading"><div><h2>Stock attention</h2><p>Products with fewer than 10 units.</p></div><span class="count-pill">{lowStock.length} low</span></div>{#each lowStock.slice(0, 5) as product}<div class="attention-row"><span><strong>{product.name}</strong><small>{product.category} · {product.unit}</small></span><strong>{product.stock} left</strong></div>{:else}<div class="attention-empty"><span class="empty-icon"><Package size={22} /></span><p>{!$products.length ? 'Add products to start tracking stock.' : 'No products need attention right now.'}</p></div>{/each}<button class="text-link" onclick={() => selectPage('inventory')}>View inventory <ArrowRight size={15} /></button></section>
-        <div class="page-card report-wide"><div class="section-heading"><div><h2>Payment collection</h2><p>Today’s sales by account.</p></div><button class="secondary" onclick={exportCsv}>Export CSV</button></div><div class="payment-totals">{#each ['cash', 'momo', 'bank'] as method}<div><span>{method === 'momo' ? 'MoMo' : method[0].toUpperCase() + method.slice(1)}</span><strong>{rwf(daySales.flatMap((s) => s.payments).filter((p) => p.method === method).reduce((sum, p) => sum + p.amount, 0))}</strong></div>{/each}</div>{#if isDemo}<p class="muted report-note">Demo mode is for interface review only. Its profit figure is withheld because purchase costs are not verified.</p>{/if}</div>
+      <div class="report-workspace">
+        <section class="page-card report-controls"><div class="section-heading"><div><h2>Business reports</h2><p>Choose a period, then move between profit, stock batches, and money collected.</p></div><span class="report-period">{reportRangeLabel}</span></div><div class="tabs report-tabs"><button class:chosen={reportTab === 'overview'} onclick={() => reportTab = 'overview'}>Overview</button><button class:chosen={reportTab === 'batches'} onclick={() => reportTab = 'batches'}>Stock batches</button><button class:chosen={reportTab === 'cash'} onclick={() => reportTab = 'cash'}>Payments & losses</button></div><div class="date-range-bar"><label><span>From</span><input type="date" max={reportTo} bind:value={reportFrom} /></label><label><span>To</span><input type="date" min={reportFrom} max={today()} bind:value={reportTo} /></label><div class="range-presets"><button class="secondary" onclick={() => setReportRange(1)}>Today</button><button class="secondary" onclick={() => setReportRange(7)}>7 days</button><button class="secondary" onclick={() => setReportRange(30)}>30 days</button></div></div></section>
+        {#if reportTab === 'overview'}
+          <div class="report-summary-grid">
+            <div class="metric"><span>Sales revenue</span><strong>{rwf(reportRevenue)}</strong><small>{reportSales.length} completed sales</small></div>
+            <div class="metric"><span>FIFO cost of goods</span><strong>{profitVerified ? rwf(reportCost) : 'Pending cost'}</strong><small>Purchase cost of units sold</small></div>
+            <div class="metric"><span>Gross profit</span><strong>{profitVerified ? rwf(reportGrossProfit) : 'Pending cost'}</strong><small>Revenue − FIFO cost</small></div>
+            <div class="metric"><span>Operating expenses</span><strong>{rwf(reportExpenseTotal)}</strong><small>{reportExpenses.length} running costs</small></div>
+            <div class="metric"><span>Stock loss</span><strong>{rwf(reportStockLossTotal)}</strong><small>{reportStockLosses.length} damage or loss entries</small></div>
+            <div class="metric profit"><span>Net profit</span><strong>{profitVerified ? rwf(reportProfit) : 'Pending cost'}</strong><small>Gross profit − expenses − stock loss</small></div>
+          </div>
+          <section class="page-card report-formula"><h2>How this report works</h2><div class="formula-flow"><span><small>1. Money earned</small><strong>{rwf(reportRevenue)}</strong><em>Sales revenue</em></span><b>−</b><span><small>2. Stock sold</small><strong>{profitVerified ? rwf(reportCost) : 'Pending'}</strong><em>FIFO purchase cost</em></span><b>−</b><span><small>3. Running costs</small><strong>{rwf(reportExpenseTotal + reportStockLossTotal)}</strong><em>Expenses + stock loss</em></span><b>=</b><span class="formula-result"><small>Net result</small><strong>{profitVerified ? rwf(reportProfit) : 'Pending cost'}</strong><em>For the selected period</em></span></div></section>
+          <section class="page-card trend-card report-trend-card"><div class="section-heading"><div><h2>Sales trend</h2><p>Revenue inside the selected period. Ranges longer than 31 days are grouped by month.</p></div><span class="count-pill">{reportTrend.length} periods</span></div><div class="trend-scroll"><div class="trend-chart" style={`grid-template-columns:repeat(${Math.max(1, reportTrend.length)},minmax(52px,1fr));min-width:max(100%,${Math.max(1, reportTrend.length) * 62}px)`} aria-label="Sales revenue in the selected date range">{#each reportTrend as period}<div class="trend-column" title={rwf(period.amount)}><span class="trend-value">{period.amount > 0 ? compactMoney(period.amount) : ''}</span><div class="trend-track"><div class="trend-bar" style={`height:${period.amount > 0 ? Math.max(5, period.amount / reportTrendMax * 100) : 0}%`}></div></div><span class="trend-label">{period.label}</span></div>{/each}</div></div>{#if reportTrend.every((period) => period.amount === 0)}<p class="chart-empty">No sales were recorded in this period.</p>{/if}</section>
+        {:else if reportTab === 'batches'}
+          <section class="page-card batch-report-card"><div class="section-heading"><div><h2>Profit by stock batch</h2><p>The range selects when stock arrived. Each row follows that delivery through sales, damage, and remaining stock.</p></div><span class="count-pill">{batchProfitRows.length} batches</span></div>{#if batchReportError}<div class="notice danger">Batch reporting is unavailable. Run migration 0005, then refresh. {batchReportError}</div>{/if}{#if batchReportLoading}<p class="muted report-loading">Calculating FIFO batches…</p>{:else}<div class="table-wrap"><table class="batch-profit-table"><thead><tr><th>Batch</th><th>Arrived</th><th>Product</th><th>Received</th><th>Sold</th><th>Lost</th><th>Remaining</th><th>Revenue</th><th>FIFO cost</th><th>Batch result</th><th>Status</th></tr></thead><tbody>{#each batchProfitRows as batch}<tr><td><span class="batch-reference">{batchReference(batch)}</span></td><td>{shortDate(batch.at)}</td><td><strong>{batch.productName}</strong><small class="table-subline">{batch.category} · {batch.unit}</small></td><td>{batch.quantityReceived}</td><td>{batch.quantitySold}</td><td>{batch.quantityLost}</td><td>{batch.quantityRemaining}</td><td>{rwf(batch.salesRevenue)}</td><td>{rwf(batch.costOfGoods)}</td><td class="strong">{batch.realizedContribution === null ? 'Not traceable' : rwf(batch.realizedContribution)}</td><td><span class:danger={batch.status === 'Legacy gap'} class:warning={batch.status === 'Open'} class="badge">{batch.status}</span></td></tr>{:else}<tr><td colspan="11" class="empty-cell">No stock batches arrived in this period.</td></tr>{/each}</tbody></table></div>{/if}<p class="muted report-note">Batch result = revenue from units sold − their FIFO purchase cost − damaged or missing units from that batch. Operating expenses remain in Overview because they are not tied to one delivery.</p></section>
+        {:else}
+          <div class="cash-loss-grid">
+            <section class="page-card"><div class="section-heading"><div><h2>Payments collected</h2><p>Sales money received during {reportRangeLabel}.</p></div></div><div class="account-flow-list">{#each ['cash', 'momo', 'bank'] as method}{@const collected = reportSales.flatMap((sale) => sale.payments).filter((payment) => payment.method === method).reduce((sum, payment) => sum + payment.amount, 0)}{@const spent = reportExpenses.filter((expense) => expense.method === method).reduce((sum, expense) => sum + expense.amount, 0)}<div><span><strong>{method === 'momo' ? 'MoMo' : method[0].toUpperCase() + method.slice(1)}</strong><small>Sales {rwf(collected)} · Expenses {rwf(spent)}</small></span><strong>{rwf(collected - spent)}</strong></div>{/each}</div><p class="muted report-note">The right-hand amount is sales collected minus operating expenses paid from that account. Supplier payments are not included because stock deliveries do not yet record a payment account.</p></section>
+            <section class="page-card"><div class="section-heading"><div><h2>Stock and trading losses</h2><p>Losses calculated automatically from FIFO costs.</p></div><span class="count-pill">{reportStockLosses.length} adjustments</span></div><div class="loss-summary"><span><small>Damaged or missing stock</small><strong>{rwf(reportStockLossTotal)}</strong></span><span><small>Sales below FIFO cost</small><strong>{rwf(reportTradingLossTotal)}</strong></span></div>{#each reportStockLosses as entry}<div class="attention-row"><span><strong>{entry.productName}</strong><small>{entry.quantity} × {entry.unit} · {entry.reason} · {shortDate(entry.at)}</small></span><strong>{rwf(entry.cost)}</strong></div>{:else}<div class="attention-empty compact-empty"><span class="empty-icon"><TriangleAlert size={22} /></span><p>No stock loss was recorded in this period.</p></div>{/each}<button class="text-link" onclick={openDamageDrawer}>Record stock damage <ArrowRight size={15} /></button></section>
+          </div>
+        {/if}
       </div>
-    {:else}<div class="page-card"><div class="section-heading"><div><h2>Activity log</h2><p>A clear timeline of changes and transactions.</p></div></div><div class="activity-list">{#each $activities as item}<div class="activity-row"><span class="activity-dot"></span><div><strong>{item.action}</strong><p>{item.detail}</p></div><time>{shortDate(item.at)}</time></div>{:else}<p class="muted">No activity yet.</p>{/each}</div></div>{/if}
+    {:else}<div class="page-card"><div class="section-heading"><div><h2>Activity log</h2><p>Choose a period to review changes and transactions.</p></div></div><div class="sales-filters activity-filters"><label><span>From</span><input type="date" max={activityTo || undefined} bind:value={activityFrom} /></label><label><span>To</span><input type="date" min={activityFrom || undefined} bind:value={activityTo} /></label><label><span>Sort</span><select bind:value={activityOrder}><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label><button class="filter-reset" onclick={() => { activityFrom = dateOffset(today(), -6); activityTo = today(); activityOrder = 'newest'; }}>7 days</button></div><div class="results-count">{visibleActivities.length} activities shown</div><div class="activity-list">{#each visibleActivities as item}<div class="activity-row"><span class="activity-dot"></span><div><strong>{item.action}</strong><p>{item.detail}</p></div><time>{shortDate(item.at)}</time></div>{:else}<p class="muted">No activity in this date range.</p>{/each}</div></div>{/if}
     </main></div>
   {#if startDayOpen}<div class="overlay" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) startDayOpen = false; }}><section class="drawer"><div class="drawer-head"><div><h2>{$businessDay?.date === today() && $businessDay.status === 'closed' ? 'Reopen day' : dayIsOpen ? 'Daily prices' : 'Start day'}</h2><p>{$businessDay?.date === today() && $businessDay.status === 'closed' ? 'Record why this business day is being reopened.' : dayIsOpen ? 'Update the selling prices used for new sales today.' : 'Review today’s selling prices before taking sales.'}</p></div><button class="icon-button" aria-label="Close" onclick={() => startDayOpen = false}><X size={21} /></button></div><div class="drawer-scroll">{#if $businessDay?.date === today() && $businessDay.status === 'closed'}<div class="form-stack"><label>Reason<input bind:value={reopenReason} minlength="5" placeholder="Why is the day being reopened?" required /></label></div>{:else}<div class="price-list">{#each $products.filter((p) => p.active) as product}<label><span><strong>{product.name}</strong><small>{product.category} · {product.unit}</small></span><div class="money-input"><span>RWF</span><input type="number" min="0" step="1" bind:value={priceDraft[product.id]} /></div></label>{/each}</div>{/if}</div><div class="drawer-footer"><button class="primary" disabled={working} onclick={submitDay}>{$businessDay?.date === today() && $businessDay.status === 'closed' ? 'Reopen day' : dayIsOpen ? 'Save daily prices' : 'Confirm prices and open day'} <ArrowRight size={19} /></button></div></section></div>{/if}
   {#if selectedSale}<div class="overlay" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) selectedSale = null; }}><section class="drawer sale-detail-drawer"><div class="drawer-head"><div><span class="eyebrow">SALE #{selectedSale.id.slice(0, 8)}</span><h2>Sale details</h2><p>{shortDate(selectedSale.at)}</p></div><button type="button" class="icon-button" aria-label="Close sale details" onclick={() => selectedSale = null}><X size={21} /></button></div><div class="drawer-scroll">

@@ -4,6 +4,7 @@ export type CartLine = { productId: string; quantity: number; unitPrice: number 
 export type Payment = { method: PaymentMethod; amount: number };
 export type Sale = { id: string; at: string; lines: (CartLine & { name: string; cost: number })[]; payments: Payment[]; total: number; cost: number; hasCostDeficit: boolean; source: 'demo' | 'supabase'; sync: 'synced' | 'queued' };
 export type StockEntry = { id: string; at: string; productId: string; productName: string; quantity: number; remaining: number; unitCost: number; supplier: string; paid: number; note: string };
+export type BatchProfit = { id: string; at: string; productId: string; productName: string; category: string; unit: string; quantityReceived: number; quantitySold: number; quantityLost: number; quantityUntracked: number; quantityRemaining: number; unitCost: number; salesRevenue: number; costOfGoods: number; stockLossCost: number; realizedContribution: number | null; status: 'Open' | 'Finished' | 'Legacy gap' };
 export type Expense = { id: string; at: string; category: string; description: string; amount: number; method: PaymentMethod };
 export type StockLossReason = 'Damaged' | 'Expired' | 'Stolen' | 'Missing' | 'Other';
 export type StockLoss = { id: string; at: string; productId: string; productName: string; unit: string; quantity: number; cost: number; reason: StockLossReason; note: string };

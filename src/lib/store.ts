@@ -1,5 +1,5 @@
 import { get, writable } from 'svelte/store';
-import type { Activity, BusinessDay, Expense, Product, Sale, StockEntry, CartLine, Payment, StockLoss, StockLossReason } from './types';
+import type { Activity, BatchProfit, BusinessDay, Expense, Product, Sale, StockEntry, CartLine, Payment, StockLoss, StockLossReason } from './types';
 import { today } from './format';
 import { supabase } from './supabase';
 import { generateDemoScenario } from './demoScenario';
@@ -66,6 +66,78 @@ export async function refresh() {
   if (!d.error && d.data?.[0]) { const row = d.data[0]; businessDay.set({ date: row.date, status: row.status, openedAt: row.opened_at, closedAt: row.closed_at }); }
   if (!b.error) stockEntries.set((b.data ?? []).map((row) => ({ id: row.id, at: row.received_at, productId: row.product_id, productName: row.products?.name ?? '', quantity: row.quantity, remaining: row.remaining, unitCost: row.unit_cost, supplier: row.supplier, paid: row.paid, note: row.note })));
   if (!l.error) stockLosses.set((l.data ?? []).map((row) => ({ id: row.id, at: row.created_at, productId: row.product_id, productName: row.products?.name ?? '', unit: row.products?.unit ?? '', quantity: row.quantity, cost: row.cost, reason: row.reason, note: row.note })) as StockLoss[]);
+}
+
+export async function loadBatchProfitReport(from: string, to: string): Promise<BatchProfit[]> {
+  if (supabase) {
+    const { data, error } = await supabase.rpc('get_stock_batch_report', { p_from: from || null, p_to: to || null });
+    if (error) throw error;
+    return (data ?? []).map((row: Record<string, unknown>) => ({
+      id: String(row.batch_id), at: String(row.received_at), productId: String(row.product_id),
+      productName: String(row.product_name), category: String(row.category), unit: String(row.unit),
+      quantityReceived: Number(row.quantity_received), quantitySold: Number(row.quantity_sold),
+      quantityLost: Number(row.quantity_lost), quantityUntracked: Number(row.quantity_untracked),
+      quantityRemaining: Number(row.quantity_remaining), unitCost: Number(row.unit_cost),
+      salesRevenue: Number(row.sales_revenue), costOfGoods: Number(row.cost_of_goods),
+      stockLossCost: Number(row.stock_loss_cost),
+      realizedContribution: row.realized_contribution === null ? null : Number(row.realized_contribution),
+      status: String(row.status) as BatchProfit['status']
+    }));
+  }
+
+  const catalog = get(products);
+  const batches = get(stockEntries).map((entry) => ({
+    entry,
+    available: entry.quantity,
+    sold: 0,
+    lost: 0,
+    revenue: 0,
+    cost: 0,
+    lossCost: 0
+  })).sort((a, b) => new Date(a.entry.at).getTime() - new Date(b.entry.at).getTime() || a.entry.id.localeCompare(b.entry.id));
+  const events = [
+    ...get(sales).map((sale) => ({ type: 'sale' as const, at: sale.at, sale })),
+    ...get(stockLosses).map((loss) => ({ type: 'loss' as const, at: loss.at, loss }))
+  ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+
+  for (const event of events) {
+    const allocations = event.type === 'sale'
+      ? event.sale.lines.map((line) => ({ productId: line.productId, quantity: line.quantity, unitPrice: line.unitPrice, loss: false }))
+      : [{ productId: event.loss.productId, quantity: event.loss.quantity, unitPrice: 0, loss: true }];
+    for (const allocation of allocations) {
+      let needed = allocation.quantity;
+      for (const batch of batches) {
+        if (!needed) break;
+        if (batch.entry.productId !== allocation.productId || batch.available <= 0 || new Date(batch.entry.at) > new Date(event.at)) continue;
+        const used = Math.min(needed, batch.available);
+        batch.available -= used;
+        needed -= used;
+        if (allocation.loss) {
+          batch.lost += used;
+          batch.lossCost += used * batch.entry.unitCost;
+        } else {
+          batch.sold += used;
+          batch.revenue += used * allocation.unitPrice;
+          batch.cost += used * batch.entry.unitCost;
+        }
+      }
+    }
+  }
+
+  const localDate = (value: string) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kigali' }).format(new Date(value));
+  return batches
+    .filter(({ entry }) => (!from || localDate(entry.at) >= from) && (!to || localDate(entry.at) <= to))
+    .map(({ entry, available, sold, lost, revenue, cost, lossCost }) => {
+      const product = catalog.find((item) => item.id === entry.productId);
+      return {
+        id: entry.id, at: entry.at, productId: entry.productId, productName: entry.productName,
+        category: product?.category ?? '', unit: product?.unit ?? '', quantityReceived: entry.quantity,
+        quantitySold: sold, quantityLost: lost, quantityUntracked: 0, quantityRemaining: available,
+        unitCost: entry.unitCost, salesRevenue: revenue, costOfGoods: cost, stockLossCost: lossCost,
+        realizedContribution: revenue - cost - lossCost,
+        status: available === 0 ? 'Finished' as const : 'Open' as const
+      };
+    }).toSorted((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime() || b.id.localeCompare(a.id));
 }
 
 export async function openDay(prices: Record<string, number>) {
