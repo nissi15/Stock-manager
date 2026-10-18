@@ -235,13 +235,13 @@ td.strong{color:#050607;font-weight:700}
 @media(max-width:1500px){.trend-card{grid-column:span 1}.attention-card{grid-column:span 1}}
 @media(max-width:600px){.trend-card,.attention-card{grid-column:span 1}.trend-chart{height:215px;gap:3px;padding:15px 0 0}.trend-track{height:150px}.trend-bar{width:65%}.trend-label{font-size:9px}.trend-value{font-size:8px}}
 .price-list .money-input input{color:#000}
-.expense-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:16px}
-.expense-entry-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:16px;margin-bottom:16px}
-.expense-history{margin-top:0}
-.stock-loss-callout{display:flex;flex-direction:column;align-items:flex-start;gap:18px;background:#fffdfa}
-.stock-loss-callout>div{display:flex;flex-direction:column;gap:9px}.stock-loss-callout p{color:#30353b;font-size:13px;line-height:1.55}
-.stock-loss-callout .secondary{margin-top:auto}
-.loss-icon{width:46px;height:46px;display:grid;place-items:center;border-radius:13px;background:#fff2dc;color:#a45c00}
+.expense-simple-grid{min-height:560px;align-items:stretch}
+.expense-recent-card{display:flex;min-height:0;flex-direction:column}
+.expense-total-pill{padding:8px 11px;border-radius:999px;background:#f1f3f5;color:#111317;font-size:13px;font-weight:700;white-space:nowrap}
+.expense-list{overflow:auto;max-height:455px}
+.expense-list>div{align-items:center}.expense-list small{font-size:12px;line-height:1.4}
+.expense-list .expense-empty{min-height:290px;align-items:center;justify-content:center;flex-direction:column;border:0;color:#4b535c;text-align:center}
+.expense-empty p{font-size:12px}
 .damage-button{color:#8b4e00}
 .damage-note{display:flex;align-items:flex-start;gap:11px;padding:13px;border:1px solid #f1d7ad;border-radius:9px;background:#fffaf1;color:#915800}
 .damage-note>span{display:flex;flex-direction:column;gap:4px}.damage-note strong{font-size:13px}.damage-note small{color:#5f4c31;font-size:11px;font-weight:500;line-height:1.45}
@@ -252,6 +252,6 @@ td.strong{color:#050607;font-weight:700}
 .loss-summary>span{display:flex;flex-direction:column;gap:7px;padding:13px;border:1px solid #eceef0;border-radius:10px}
 .loss-summary small{color:#343a41;font-size:11px;font-weight:600}.loss-summary strong{font-size:17px}
 .compact-empty{min-height:110px}
-@media(max-width:1500px){.expense-summary-grid{grid-template-columns:repeat(2,1fr)}.report-grid{grid-template-columns:repeat(2,1fr)}.metric.profit,.trend-card,.report-wide{grid-column:1/-1}.loss-report-card,.attention-card{grid-column:span 1}}
-@media(max-width:850px){.expense-entry-grid{grid-template-columns:1fr}}
-@media(max-width:600px){.expense-summary-grid,.report-grid{grid-template-columns:1fr}.metric.profit,.trend-card,.loss-report-card,.attention-card,.report-wide{grid-column:span 1}.loss-summary{grid-template-columns:1fr}}
+@media(max-width:1500px){.report-grid{grid-template-columns:repeat(2,1fr)}.metric.profit,.trend-card,.report-wide{grid-column:1/-1}.loss-report-card,.attention-card{grid-column:span 1}}
+@media(max-width:850px){.expense-simple-grid{min-height:0}.expense-list{max-height:none}}
+@media(max-width:600px){.report-grid{grid-template-columns:1fr}.metric.profit,.trend-card,.loss-report-card,.attention-card,.report-wide{grid-column:span 1}.loss-summary{grid-template-columns:1fr}}
