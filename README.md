@@ -35,7 +35,7 @@ GitHub Actions runs these checks automatically on pushes and pull requests.
 3. Copy `.env.example` to `.env` and fill `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` with the project URL and publishable/anon key. **Never put a service-role key in this file.**
 4. Restart the dev server, sign up, create products, record opening stock through **Add stock**, and start the day.
 
-The migration enforces per-user row-level security and uses database functions for atomic day opening, stock receipt, FIFO-costed sales, and day close. A stock deficit caused by an oversell is flagged and blocks day close until a later receipt allocates cost to it. Sales use client-generated UUIDs for retry idempotency.
+The migrations enforce per-user row-level security and use database functions for atomic day opening, stock receipt, FIFO-costed sales, stock-loss adjustments, and day close. Migration `0005_batch_profit_ledger.sql` preserves the exact receipt batch consumed by every new sale or stock loss so realized profit can be reported batch by batch. Historical consumption from before that migration is marked as a legacy gap rather than being assigned an invented profit. Sales use client-generated UUIDs for retry idempotency.
 
 ## Current scope
 
