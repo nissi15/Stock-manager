@@ -255,3 +255,52 @@ td.strong{color:#050607;font-weight:700}
 @media(max-width:1500px){.report-grid{grid-template-columns:repeat(2,1fr)}.metric.profit,.trend-card,.report-wide{grid-column:1/-1}.loss-report-card,.attention-card{grid-column:span 1}}
 @media(max-width:850px){.expense-simple-grid{min-height:0}.expense-list{max-height:none}}
 @media(max-width:600px){.report-grid{grid-template-columns:1fr}.metric.profit,.trend-card,.loss-report-card,.attention-card,.report-wide{grid-column:span 1}.loss-summary{grid-template-columns:1fr}}
+
+/* iPad and compact laptop layouts */
+@media(min-width:851px) and (max-width:1240px){
+  .rail,.rail.expanded{width:74px}
+  .rail.expanded+.workspace,.workspace{width:calc(100% - 74px);padding:0 18px 22px}
+  .rail-header{padding:0 17px}
+  .rail .brand-name,.rail .rail-caption,.rail .account-details,.rail nav button span,.rail .rail-bottom span{display:none!important}
+  .rail nav,.rail.expanded nav{padding:18px 10px 0}
+  .rail nav button,.rail.expanded nav button{justify-content:center;padding:0}
+  .rail-bottom,.rail.expanded .rail-bottom{justify-content:center;padding:0}
+  .signout-button{justify-content:center;padding:10px 0}
+  .sale-layout,.sale-layout.payment-visible{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+  .panel{padding:21px 18px}
+  .product-head,.product-row{grid-template-columns:minmax(105px,1fr) 55px 100px 18px;gap:6px}
+  .cart-head,.cart-row{grid-template-columns:minmax(100px,1fr) 58px minmax(95px,.9fr) 92px 20px;gap:7px}
+  .cart-head{font-size:11px}
+  .cart-row input{padding:0 7px}
+  .price-cell small{white-space:normal}
+  .sales-filters,.sales-filters.inventory-filters{grid-template-columns:1fr 1fr}
+  .filter-reset{width:100%}
+  .report-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .metric.profit,.trend-card,.report-wide{grid-column:1/-1}
+  .loss-report-card,.attention-card{grid-column:span 1}
+}
+
+@media(max-width:850px){
+  .rail,.rail.expanded{width:64px}
+  .rail.expanded+.workspace,.workspace{width:calc(100% - 64px);padding:0 14px 20px}
+  .rail-header{height:68px;padding:0 13px}
+  .rail .brand-name,.rail .rail-caption,.rail .account-details,.rail nav button span,.rail .rail-bottom span{display:none!important}
+  .rail nav,.rail.expanded nav{padding:15px 7px 0}
+  .rail nav button,.rail.expanded nav button{justify-content:center;padding:0}
+  .rail-footer{padding:7px}
+  .rail-bottom,.rail.expanded .rail-bottom,.signout-button{justify-content:center;padding:0}
+  .topbar{height:82px;margin-bottom:15px}
+  .status{gap:8px}
+  .demo-pill{display:none}
+  .tabs{overflow-x:auto;white-space:nowrap;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .sales-filters,.sales-filters.inventory-filters{grid-template-columns:1fr 1fr}
+  .filter-reset{width:100%}
+  .page-card{overflow:hidden}
+}
+
+@media(max-width:600px){
+  .rail,.rail.expanded{width:54px}
+  .rail.expanded+.workspace,.workspace{width:calc(100% - 54px);padding:0 10px 16px}
+  .sales-filters,.sales-filters.inventory-filters{grid-template-columns:1fr}
+}
