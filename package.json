@@ -12,6 +12,7 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"test": "vitest run",
+		"test:api-isolation": "node scripts/test-api-isolation.mjs",
 		"test:watch": "vitest"
 	},
 	"devDependencies": {
@@ -30,6 +31,7 @@
 	},
 	"dependencies": {
 		"@lucide/svelte": "^1.59.0",
-		"@supabase/supabase-js": "^2.118.0"
+		"@supabase/supabase-js": "^2.118.0",
+		"jspdf": "^4.2.1"
 	}
 }

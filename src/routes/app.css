@@ -107,31 +107,32 @@ td{color:#5b636d}
 .drawer-head,.drawer-footer,.price-list label{border-color:#eceef1}
 .banner{border-radius:9px}
 .auth-page{background:#f6f7f8;padding:40px 20px}
-.auth-shell{width:min(440px,100%)}
-.auth-wordmark{display:flex;align-items:center;justify-content:center;gap:10px;font-size:15px;font-weight:700;letter-spacing:-.03em;margin-bottom:30px}
-.auth-wordmark .brand-mark{width:34px;height:34px;border-radius:9px;background:#191b1f}
-.auth-card{width:100%;padding:34px;border:1px solid #e3e6e9;border-radius:17px;box-shadow:0 15px 50px #14181d0b;gap:19px}
-.auth-card h1{font-size:29px;letter-spacing:-.045em;margin-top:8px}
-.auth-card p{margin-top:7px;color:#858d96;line-height:1.5;font-size:13px}
-.auth-card label{font-size:12px;gap:8px}
-.auth-card input{height:47px;font-size:14px;padding:0 13px}
-.auth-card .primary{height:48px;margin-top:3px;width:100%}
+.auth-shell{width:min(540px,100%)}
+.auth-wordmark{display:flex;align-items:center;justify-content:center;gap:12px;font-size:18px;font-weight:700;letter-spacing:-.03em;margin-bottom:32px}
+.auth-wordmark .brand-mark{width:40px;height:40px;border-radius:10px;background:#191b1f}
+.auth-card{width:100%;padding:42px;border:1px solid #e3e6e9;border-radius:17px;box-shadow:0 15px 50px #14181d0b;gap:22px}
+.auth-card h1{font-size:36px;letter-spacing:-.045em;margin-top:9px}
+.auth-card p{margin-top:9px;color:#858d96;line-height:1.55;font-size:16px}
+.auth-card label{font-size:15px;gap:10px}
+.auth-card input{height:56px;font-size:16px;padding:0 16px}
+.auth-card .primary{height:56px;margin-top:4px;width:100%;font-size:16px}
 .auth-intro{margin-bottom:5px}
-.auth-links button,.verify-actions button{border:0;background:none;color:#2367d8;padding:0;font-size:12px;font-weight:600}
+.auth-links button,.verify-actions button{border:0;background:none;color:#2367d8;padding:0;font-size:14px;font-weight:600}
 .auth-links button:hover,.verify-actions button:hover:not(:disabled){text-decoration:underline}
 .auth-links{gap:15px}
-.auth-footer{text-align:center;color:#a0a6ae;font-size:11px;margin-top:20px}
-.notice{border-radius:9px;font-size:12px}
+.password-requirements{font-size:14px;color:#566270;line-height:1.55}.password-requirements ul{margin:6px 0 0;padding-left:22px}.password-requirements li.met{color:#087344}.password-requirements li.met::marker{content:'✓  '}
+.auth-footer{text-align:center;color:#a0a6ae;font-size:13px;margin-top:22px}
+.notice{border-radius:9px;font-size:14px}
 .verify-card{gap:18px}
 .verify-icon{width:58px;height:58px;border-radius:16px;background:#edf5f0;color:#23835e;display:grid;place-items:center}
-.verify-card .auth-intro p{font-size:13px;line-height:1.6}
+.verify-card .auth-intro p{font-size:16px;line-height:1.6}
 .verify-card .auth-intro strong{color:#383f47;overflow-wrap:anywhere}
-.verify-steps{display:flex;align-items:flex-start;gap:11px;font-size:12px;line-height:1.5;color:#636c76}
+.verify-steps{display:flex;align-items:flex-start;gap:12px;font-size:14px;line-height:1.5;color:#636c76}
 .verify-steps strong{color:#303741}
-.step-number{width:22px;height:22px;flex:none;display:grid;place-items:center;background:#f0f2f4;border-radius:50%;font-size:11px;font-weight:700;color:#5f6973}
+.step-number{width:26px;height:26px;flex:none;display:grid;place-items:center;background:#f0f2f4;border-radius:50%;font-size:13px;font-weight:700;color:#5f6973}
 .verify-actions{display:flex;justify-content:space-between;gap:10px;margin-top:1px}
 .verify-actions button:disabled{color:#a7aeb7;cursor:default}
-.verify-card .verify-hint{font-size:11px;margin-top:0;padding-top:17px;border-top:1px solid #eef0f2}
+.verify-card .verify-hint{font-size:13px;margin-top:0;padding-top:18px;border-top:1px solid #eef0f2}
 .panel-heading p,.section-heading p,.drawer-head p,.payment-title p,.auth-card p{color:#66717d;font-weight:500}
 .product-head,.cart-head,th{color:#69737e;font-weight:650}
 .product-name small,.price-cell small,.count-pill,.cart-empty,.onboarding-empty p,.metric small,.payment-totals span,.payment-summary span{color:#68737f;font-weight:500}
@@ -169,6 +170,10 @@ td.strong{color:#050607;font-weight:700}
 .sale-link{border:0;background:none;padding:6px 0;color:#175fca;font-size:inherit;font-weight:500;text-decoration:none}
 .sale-link:hover{text-decoration:underline}
 .sale-total{font-weight:650}
+.client-link{color:#12161b;font-weight:700}
+.sale-products-link{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;padding:6px 0;color:#175fca;font-size:inherit;text-align:left}
+.sale-products-link:hover strong{text-decoration:underline}
+.sale-products-link svg{color:#718096}
 .sale-detail-drawer{width:min(620px,100vw)}
 .sale-detail-drawer .drawer-head h2{margin-top:7px}
 .sale-summary-strip{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:28px}
@@ -209,7 +214,8 @@ td.strong{color:#050607;font-weight:700}
 .inventory-toolbar{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px 0 6px;color:#626b75;font-size:12px;font-weight:550}
 .inventory-toolbar label{display:flex;align-items:center;gap:9px;color:#343a41;font-weight:700}
 .inventory-toolbar select{height:38px;min-width:175px;padding:0 32px 0 11px;border:1px solid #d9dee4;border-radius:8px;background:#fff;color:#111418;font-size:13px;font-weight:550}
-.batch-reference{display:inline-block;padding:5px 8px;border-radius:6px;background:#f0f3f6;color:#343c45;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;font-weight:700;white-space:nowrap}
+.batch-reference{display:inline-block;padding:4px 7px;border-radius:6px;background:#f0f3f6;color:#343c45;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:10px;font-weight:700;white-space:nowrap}
+.numeric-strong{color:#111418;font-weight:700}
 .automatic-batch-note{display:flex;align-items:flex-start;gap:11px;padding:13px;border:1px solid #dbe6f5;border-radius:9px;background:#f5f9ff;color:#285b9d}
 .automatic-batch-note>span{display:flex;flex-direction:column;gap:4px}.automatic-batch-note strong{font-size:13px}.automatic-batch-note small{color:#4f6178;font-size:11px;font-weight:500;line-height:1.45}
 .drawer-scroll{overflow-x:hidden}.drawer .form-grid,.drawer .form-grid>*{min-width:0}
@@ -279,6 +285,7 @@ td.strong{color:#050607;font-weight:700}
   .metric.profit,.trend-card,.report-wide{grid-column:1/-1}
   .loss-report-card,.attention-card{grid-column:span 1}
 }
+@media (max-width:600px){.auth-page{padding:24px 14px}.auth-card h1{font-size:30px}.auth-card input{height:52px}.auth-card .primary{height:52px}}
 
 @media(max-width:850px){
   .rail,.rail.expanded{width:64px}
@@ -316,7 +323,10 @@ td.strong{color:#050607;font-weight:700}
 .report-tabs{margin-bottom:18px}
 .date-range-bar{display:grid;grid-template-columns:minmax(165px,220px) minmax(165px,220px) 1fr;gap:12px;align-items:end}
 .date-range-bar label{display:flex;flex-direction:column;gap:6px;color:#262b31;font-size:11px;font-weight:700}
-.date-range-bar input{height:41px;padding:0 11px;border:1px solid #d9dee4;border-radius:8px;background:#fff;color:#111418;font-size:13px;font-weight:550}
+.date-range-bar input,.date-range-bar select{width:100%;height:41px;padding:0 11px;border:1px solid #d9dee4;border-radius:8px;background:#fff;color:#111418;font-size:13px;font-weight:550}
+.report-filter-grid{grid-template-columns:minmax(135px,.7fr) minmax(135px,.7fr) minmax(180px,1fr) minmax(230px,1.35fr) auto;margin-top:16px}
+.report-filter-grid.payments-only{grid-template-columns:minmax(165px,220px) minmax(165px,220px) 1fr}
+.report-filter-error{margin-top:12px;color:#a7352c;font-size:12px;font-weight:600}
 .range-presets{display:flex;justify-content:flex-end;gap:8px}
 .range-presets .secondary{height:41px}
 .report-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
@@ -360,6 +370,69 @@ td.strong{color:#050607;font-weight:700}
 .account-flow-list small{color:#4c555f;font-size:12px;font-weight:500}
 .account-flow-list>div>strong{font-size:17px;white-space:nowrap}
 
+/* Faster payment selection and automatic split */
+.payment-panel{overflow-y:auto}
+.payment-title p{color:#111317}
+.payment-picker{padding-top:22px}
+.payment-picker>span{color:#111317;font-size:14px;font-weight:700}
+.payment-picker>small{float:right;color:#30353b;font-size:12px;font-weight:550}
+.payment-choice-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:11px}
+.payment-choice-grid button{min-width:0;height:54px;display:flex;align-items:center;justify-content:center;gap:7px;padding:0 9px;border:1px solid #d8dee5;border-radius:9px;background:#fff;color:#171a1e;font-size:13px;font-weight:650}
+.payment-choice-grid button:hover:not(:disabled){background:#f4f7fa}
+.payment-choice-grid button.selected{border-color:#1468df;background:#edf4ff;color:#155fca;box-shadow:inset 0 0 0 1px #1468df}
+.payment-choice-grid button b{width:12px;color:#1468df}
+.single-payment{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:22px;padding:17px;border:1px solid #dfe4e9;border-radius:10px;background:#f8fafb;color:#111317}
+.single-payment>span{display:flex;flex-direction:column;gap:5px}.single-payment small{color:#252a30;font-size:11px;font-weight:500}.single-payment>strong{font-size:18px;white-space:nowrap}
+.split-payment{gap:15px}.split-payment label>small{display:block;margin-top:6px;color:#20242a;font-size:11px;font-weight:500}.split-payment .money-input.automatic{background:#f3f5f6}.split-payment input:read-only{cursor:default}
+.split-payment .money-input input{font-weight:750;letter-spacing:.01em}
+.payment-empty{margin-top:22px;padding:18px;border:1px dashed #d7dde3;border-radius:10px;color:#20242a;font-size:13px;text-align:center}
+
+.stock-figure{color:#1264cf;font-weight:750}
+.price-figure{color:#111418;font-weight:750}
+
+/* Focused business reports */
+.report-heading-row{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;border-bottom:1px solid #e4e7eb}
+.report-tabs-inline{margin:0;border:0}
+.report-tabs-inline button{padding:10px 0 13px}
+.report-analysis-bar{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;padding:17px 20px}
+.report-analysis-bar label{display:flex;min-width:min(620px,70%);flex-direction:column;gap:7px;color:#262b31;font-size:11px;font-weight:700}
+.report-analysis-bar select{width:100%;height:43px;padding:0 36px 0 12px;border:1px solid #d9dee4;border-radius:8px;background:#fff;color:#111418;font-size:13px;font-weight:600}
+.report-analysis-bar small{max-width:520px;color:#59636e;font-size:11px;line-height:1.45;text-align:right}
+.metric.tone-blue,.metric.tone-neutral,.metric.tone-green,.metric.tone-green-strong,.metric.tone-amber,.metric.tone-red{border-color:#e1e4e8;background:#fff}
+.metric.tone-blue strong{color:#205da8}.metric.tone-neutral strong{color:#242a31}.metric.tone-green strong,.metric.tone-green-strong strong{color:#187544}.metric.tone-amber strong{color:#935b08}.metric.tone-red strong{color:#a7352c}
+.metric.tone-green-strong.metric-loss{border-color:#e1e4e8;background:#fff}.metric.tone-green-strong.metric-loss strong{color:#a7352c}
+.batch-analysis-note{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:17px 20px}
+.batch-analysis-note>div{display:flex;min-width:0;flex-direction:column;gap:5px}.batch-analysis-note>div>span{color:#5d6670;font-size:12px}
+.batch-analysis-note.legacy-note{border-color:#eeddbd;background:#fffaf2}
+.report-trend-card{overflow:visible;padding-bottom:22px}
+.financial-trend-head{align-items:flex-start}
+.trend-legend{display:flex;align-items:center;gap:17px;color:#555f69;font-size:11px;font-weight:650}
+.trend-legend span,.trend-tooltip span{display:flex;align-items:center;gap:7px}
+.revenue-dot,.profit-dot,.expense-dot{width:9px;height:9px;display:inline-block;flex:none;border-radius:50%;background:#292d32}.profit-dot{background:#24a361}.expense-dot{background:#817b75}.profit-dot.negative-dot{background:#c4463d}
+.financial-trend{min-height:285px;display:grid;align-items:end;gap:18px;padding:20px 22px 0;border-bottom:1px solid #e0e4e8;overflow-x:auto;overflow-y:visible;background:repeating-linear-gradient(to top,transparent 0,transparent 64px,#edf0f2 65px,#edf0f2 66px)}
+.financial-period{position:relative;height:260px;min-width:74px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:0;border:0;background:transparent;color:inherit;cursor:default;outline:none}
+.financial-period-label{height:35px;padding-top:11px;color:#707983;font-size:11px;font-weight:600;white-space:nowrap}
+.financial-bars{width:100%;height:210px;display:flex;align-items:flex-end;justify-content:center;gap:6px}
+.financial-bar{width:min(36px,34%);min-height:0;border-radius:7px 7px 0 0;transition:height .25s ease,filter .15s ease}
+.revenue-bar{background:#2c3035}.profit-bar{background:#25a362}.profit-bar.negative-bar{background:#c4463d}
+.financial-period:hover .financial-bar,.financial-period:focus-within .financial-bar{filter:brightness(.86)}
+.trend-tooltip{position:absolute;top:4px;left:50%;z-index:4;width:196px;display:flex;flex-direction:column;gap:0;padding:0;border:1px solid #dfe3e8;border-radius:12px;background:#fff;box-shadow:0 12px 30px #20252b24;opacity:0;overflow:hidden;pointer-events:none;transform:translate(-50%,-8px);transition:opacity .15s ease,transform .15s ease;color:#686c70;font-size:12px}
+.trend-tooltip strong{padding:11px 14px;border-bottom:1px solid #e4e7eb;color:#343a40;font-size:13px;font-weight:500;text-align:left}.trend-tooltip span{justify-content:flex-start;padding:6px 14px}.trend-tooltip em{font-style:normal}.trend-tooltip b{margin-left:auto;color:#22272d;font-size:12px;font-weight:500}.tooltip-spacer{width:9px;display:inline-block;flex:none}
+.financial-period:hover .trend-tooltip,.financial-period:focus-within .trend-tooltip{opacity:1;transform:translate(-50%,0)}
+.financial-period:first-child .trend-tooltip{left:0;transform:translate(0,-8px)}
+.financial-period:first-child:hover .trend-tooltip,.financial-period:first-child:focus-within .trend-tooltip{transform:translate(0,0)}
+.financial-period:last-child .trend-tooltip{right:0;left:auto;transform:translate(0,-8px)}
+.financial-period:last-child:hover .trend-tooltip,.financial-period:last-child:focus-within .trend-tooltip{transform:translate(0,0)}
+.product-report-card{padding-bottom:10px}
+.product-report-heading{align-items:flex-start}
+.product-report-filter{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin:4px 0 18px;padding:14px 16px;border:1px solid #e2e6ea;border-radius:10px;background:#f8f9fa}
+.product-report-filter label{display:flex;width:min(620px,70%);flex-direction:column;gap:7px;color:#20252a;font-size:11px;font-weight:700}
+.product-report-filter select{width:100%;height:42px;padding:0 36px 0 12px;border:1px solid #d7dde3;border-radius:8px;background:#fff;color:#111418;font-size:13px;font-weight:600}
+.product-report-filter small{max-width:430px;color:#5d6670;font-size:11px;line-height:1.45;text-align:right}
+.product-comparison-table{min-width:1280px}
+.product-comparison-table td:first-child{min-width:240px}
+.product-comparison-table td{vertical-align:middle}
+
 @media(max-width:1240px){
   .range-filters,.inventory-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
   .report-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -373,6 +446,8 @@ td.strong{color:#050607;font-weight:700}
   .date-range-bar{grid-template-columns:1fr 1fr}
   .range-presets{grid-column:1/-1;justify-content:flex-start;flex-wrap:wrap}
   .cash-loss-grid{grid-template-columns:1fr}
+  .report-analysis-bar{align-items:stretch;flex-direction:column}.report-analysis-bar label{min-width:0;width:100%}.report-analysis-bar small{text-align:left}
+  .product-report-filter{align-items:stretch;flex-direction:column}.product-report-filter label{width:100%}.product-report-filter small{text-align:left}
 }
 
 @media(max-width:600px){
@@ -382,4 +457,38 @@ td.strong{color:#050607;font-weight:700}
   .report-controls{padding-bottom:16px}
   .report-period{white-space:normal}
   .formula-flow>span{min-height:82px;padding:14px}
+  .report-heading-row{align-items:flex-start;flex-direction:column}.report-period{order:-1;align-self:flex-end}.report-tabs-inline{width:100%}
+  .financial-trend{gap:9px;padding-inline:8px}.trend-tooltip{width:190px}.batch-analysis-note{align-items:flex-start;flex-direction:column}
+}
+
+/* Auditable end-of-day close and PDF actions */
+.report-heading-actions{display:flex;align-items:center;gap:10px;padding-bottom:8px}
+.report-pdf-button{height:36px;padding:0 12px;font-size:12px}
+.daily-prices-button{display:inline-flex;align-items:center;gap:7px}
+.close-day-drawer{width:min(760px,100vw)}
+.close-day-scroll{display:flex;flex-direction:column;gap:18px;background:#f8f9fa}
+.close-blocker{display:flex;align-items:flex-start;gap:11px;padding:14px;border:1px solid #efc8c2;border-radius:10px;background:#fff2f0;color:#9b3128}
+.close-blocker span{display:flex;flex-direction:column;gap:4px}.close-blocker small{color:#6d403c}
+.close-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.close-summary-grid>span{min-height:102px;display:flex;flex-direction:column;gap:7px;padding:15px;border:1px solid #e0e4e8;border-radius:10px;background:#fff}
+.close-summary-grid small,.payment-close-grid small{color:#626d78;font-size:11px;font-weight:650}.close-summary-grid strong{font-size:18px}.close-summary-grid em{color:#6b747e;font-size:11px;font-style:normal}
+.close-review-section{padding:18px;border:1px solid #e0e4e8;border-radius:11px;background:#fff}
+.close-section-title{display:flex;align-items:flex-start;justify-content:space-between;gap:15px;margin-bottom:15px}.close-section-title h3{margin:0;font-size:16px}.close-section-title p{margin-top:5px;color:#66717d;font-size:12px}.close-section-title>strong{font-size:15px;white-space:nowrap}
+.payment-close-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.payment-close-grid>span{display:flex;flex-direction:column;gap:7px;padding:13px;border:1px solid #e5e8ec;border-radius:9px;background:#fafbfc}.payment-close-grid strong{font-size:16px}
+.cash-reconciliation>label{display:flex;align-items:center;justify-content:space-between;gap:20px;color:#30363d;font-size:13px;font-weight:700}.cash-reconciliation .money-input{width:min(260px,55%)}.cash-reconciliation .money-input input{font-weight:750;color:#101418}
+.cash-difference{display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding:12px 14px;border-radius:9px;background:#eff8f3;color:#176a42}.cash-difference.positive{background:#fff7e8;color:#8a570d}.cash-difference.negative{background:#fff0ee;color:#a33229}.cash-note{margin-top:10px;color:#6d7680;font-size:11px;line-height:1.45}
+.closing-stock-list{max-height:270px;overflow:auto;border-top:1px solid #e6e9ed}.closing-stock-head,.closing-stock-list>div{display:grid;grid-template-columns:minmax(150px,1.3fr) minmax(90px,1fr) 95px;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid #eceef1;font-size:12px}.closing-stock-head{position:sticky;top:0;z-index:1;background:#fff;color:#6c7680;font-size:10px;font-weight:700}.closing-stock-list>div>span:first-child{display:flex;flex-direction:column;gap:3px}.closing-stock-list small{color:#727c87}.closing-stock-list>div>strong{text-align:right;color:#155fca}
+.close-day-actions{display:flex;justify-content:flex-end;gap:10px}.close-day-actions .primary{width:auto;min-width:280px;justify-content:center}.close-day-actions .secondary{height:60px}
+
+@media(max-width:850px){
+  .close-day-drawer{width:min(690px,100vw)}
+  .close-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:600px){
+  .report-heading-actions{width:100%;justify-content:space-between;padding-bottom:8px}.report-heading-row .report-period{order:0;align-self:auto}.report-pdf-button{height:34px}
+  .close-day-drawer .drawer-head,.close-day-drawer .drawer-scroll,.close-day-drawer .drawer-footer{padding:18px}
+  .close-summary-grid,.payment-close-grid{grid-template-columns:1fr 1fr}
+  .cash-reconciliation>label{align-items:stretch;flex-direction:column}.cash-reconciliation .money-input{width:100%}
+  .closing-stock-head,.closing-stock-list>div{grid-template-columns:minmax(120px,1.3fr) 80px 70px;gap:7px}
+  .close-day-actions{display:grid;grid-template-columns:1fr}.close-day-actions .primary,.close-day-actions .secondary{width:100%;min-width:0}
 }

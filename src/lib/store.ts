@@ -1,5 +1,5 @@
 import { get, writable } from 'svelte/store';
-import type { Activity, BatchProfit, BusinessDay, Expense, Product, Sale, StockEntry, CartLine, Payment, StockLoss, StockLossReason } from './types';
+import type { Activity, BatchProfit, BusinessDay, DayClosingSnapshot, Expense, Product, Sale, StockEntry, CartLine, Payment, PaymentMethod, StockLoss, StockLossReason } from './types';
 import { today } from './format';
 import { supabase } from './supabase';
 import { generateDemoScenario } from './demoScenario';
@@ -18,6 +18,7 @@ export const online = writable(typeof navigator === 'undefined' ? true : navigat
 const key = 'stock-manager-demo-v3';
 const id = () => crypto.randomUUID();
 const audit = (action: string, detail: string) => activities.update((all) => [{ id: id(), at: new Date().toISOString(), action, detail }, ...all]);
+const localDate = (value: string) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kigali' }).format(new Date(value));
 
 export function initStore() {
   if (typeof window === 'undefined' || get(ready)) return;
@@ -35,11 +36,13 @@ export function initStore() {
     } catch { /* A corrupt demo cache starts fresh. */ }
   }
   if (isDemo) {
+    reconcileDemoLedger();
     for (const store of [products, sales, stockEntries, expenses, stockLosses, activities, businessDay]) store.subscribe(persist);
   }
   window.addEventListener('online', () => { online.set(true); void syncQueuedSales(); });
   window.addEventListener('offline', () => online.set(false));
   ready.set(true);
+  if (isDemo) persist();
 }
 
 function persist() {
@@ -47,25 +50,127 @@ function persist() {
   localStorage.setItem(key, JSON.stringify({ products: get(products), sales: get(sales), stockEntries: get(stockEntries), expenses: get(expenses), stockLosses: get(stockLosses), activities: get(activities), businessDay: get(businessDay) }));
 }
 
+function reconcileDemoLedger() {
+  if (!isDemo) return;
+  const batches = get(stockEntries).map((entry) => ({ ...entry, remaining: entry.quantity }))
+    .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime() || a.id.localeCompare(b.id));
+  const revisedSales = get(sales).map((sale) => ({ ...sale, lines: sale.lines.map((line) => ({ ...line })) }));
+  const revisedLosses = get(stockLosses).map((loss) => ({ ...loss }));
+  const events = [
+    ...revisedSales.map((sale) => ({ type: 'sale' as const, at: sale.at, sale })),
+    ...revisedLosses.map((loss) => ({ type: 'loss' as const, at: loss.at, loss }))
+  ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+
+  const allocate = (productId: string, quantity: number, at: string) => {
+    let needed = quantity;
+    let cost = 0;
+    for (const batch of batches) {
+      if (needed <= 0) break;
+      if (batch.productId !== productId || batch.remaining <= 0 || new Date(batch.at) > new Date(at)) continue;
+      const used = Math.min(needed, batch.remaining);
+      batch.remaining -= used;
+      needed -= used;
+      cost += used * batch.unitCost;
+    }
+    return { cost, missing: needed };
+  };
+
+  for (const event of events) {
+    if (event.type === 'sale') {
+      let saleCost = 0;
+      let hasCostDeficit = false;
+      event.sale.lines = event.sale.lines.map((line) => {
+        const allocation = allocate(line.productId, line.quantity, event.at);
+        saleCost += allocation.cost;
+        hasCostDeficit ||= allocation.missing > 0;
+        return { ...line, cost: allocation.cost };
+      });
+      event.sale.cost = saleCost;
+      event.sale.hasCostDeficit = hasCostDeficit;
+    } else {
+      const allocation = allocate(event.loss.productId, event.loss.quantity, event.at);
+      event.loss.cost = allocation.cost;
+    }
+  }
+
+  const remainingById = new Map(batches.map((batch) => [batch.id, batch.remaining]));
+  sales.set(revisedSales);
+  stockLosses.set(revisedLosses);
+  stockEntries.update((all) => all.map((entry) => ({ ...entry, remaining: remainingById.get(entry.id) ?? entry.remaining })));
+}
+
+let activeAccountId: string | null = null;
+let refreshGeneration = 0;
+
+export function resetAccountData(accountId: string | null = null) {
+  if (!supabase) return;
+  activeAccountId = accountId;
+  refreshGeneration += 1;
+  products.set([]);
+  sales.set([]);
+  stockEntries.set([]);
+  expenses.set([]);
+  stockLosses.set([]);
+  activities.set([]);
+  businessDay.set(null);
+}
+
 export async function refresh() {
   if (!supabase) return;
-  const [p, s, e, a, d, b, l] = await Promise.all([
+  const db = supabase;
+  const startedGeneration = refreshGeneration;
+  const { data: sessionData, error: sessionError } = await db.auth.getSession();
+  if (startedGeneration !== refreshGeneration) return;
+  if (sessionError) throw sessionError;
+  const accountId = sessionData.session?.user.id ?? null;
+  if (!accountId) {
+    resetAccountData();
+    return;
+  }
+  if (activeAccountId !== accountId) resetAccountData(accountId);
+  const requestGeneration = ++refreshGeneration;
+  // PostgREST can cap a single response independently of the requested range.
+  // Walk in small pages so reports and closing previews never silently stop at 500 rows.
+  const allRows = async (table: 'sales' | 'expenses' | 'activity_logs' | 'stock_batches' | 'stock_losses', columns: string, order: string) => {
+    const pageSize = 250;
+    const rows: Record<string, any>[] = [];
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await db.from(table).select(columns).order(order, { ascending: false }).order('id', { ascending: false }).range(offset, offset + pageSize - 1);
+      if (error) throw error;
+      rows.push(...(data ?? []));
+      if ((data?.length ?? 0) < pageSize) return { data: rows, error: null };
+    }
+  };
+  const [p, s, e, a, d, b, l, c] = await Promise.all([
     supabase.from('products').select('*').order('name'),
-    supabase.from('sales').select('*, sale_lines(*), payments(*)').order('created_at', { ascending: false }).limit(500),
-    supabase.from('expenses').select('*').order('created_at', { ascending: false }).limit(500),
-    supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(500),
+    allRows('sales', '*, sale_lines(*), payments(*)', 'created_at'),
+    allRows('expenses', '*', 'created_at'),
+    allRows('activity_logs', '*', 'created_at'),
     supabase.from('business_days').select('*').order('date', { ascending: false }).limit(1),
-    supabase.from('stock_batches').select('*, products(name)').order('received_at', { ascending: false }).limit(500),
-    supabase.from('stock_losses').select('*, products(name,unit)').order('created_at', { ascending: false }).limit(500)
+    allRows('stock_batches', '*, products(name)', 'received_at'),
+    allRows('stock_losses', '*, products(name,unit)', 'created_at'),
+    supabase.from('business_day_closings').select('id,day_id,closed_at,snapshot').order('closed_at', { ascending: false }).limit(20)
   ]);
+  if (requestGeneration !== refreshGeneration || activeAccountId !== accountId) return;
   if (p.error) throw p.error;
+  if (s.error) throw s.error;
+  if (e.error) throw e.error;
+  if (a.error) throw a.error;
+  if (d.error) throw d.error;
+  if (b.error) throw b.error;
+  if (l.error) throw l.error;
+  if (c.error) throw c.error;
   products.set((p.data ?? []).map((row) => ({ id: row.id, name: row.name, category: row.category, unit: row.unit, stock: row.stock, price: row.price, active: row.active })));
-  if (!s.error) sales.set((s.data ?? []).map((row) => ({ id: row.id, at: row.created_at, lines: (row.sale_lines ?? []).map((line: Record<string, unknown>) => ({ productId: line.product_id, name: line.product_name, quantity: line.quantity, unitPrice: line.unit_price, cost: line.unit_cost })), payments: (row.payments ?? []).map((payment: Record<string, unknown>) => ({ method: payment.method, amount: payment.amount })), total: row.total, cost: row.cost, hasCostDeficit: row.has_cost_deficit, source: 'supabase', sync: 'synced' })) as Sale[]);
-  if (!e.error) expenses.set((e.data ?? []).map((row) => ({ id: row.id, at: row.created_at, category: row.category, description: row.description, amount: row.amount, method: row.method })));
-  if (!a.error) activities.set((a.data ?? []).map((row) => ({ id: row.id, at: row.created_at, action: row.action, detail: row.detail })));
-  if (!d.error && d.data?.[0]) { const row = d.data[0]; businessDay.set({ date: row.date, status: row.status, openedAt: row.opened_at, closedAt: row.closed_at }); }
-  if (!b.error) stockEntries.set((b.data ?? []).map((row) => ({ id: row.id, at: row.received_at, productId: row.product_id, productName: row.products?.name ?? '', quantity: row.quantity, remaining: row.remaining, unitCost: row.unit_cost, supplier: row.supplier, paid: row.paid, note: row.note })));
-  if (!l.error) stockLosses.set((l.data ?? []).map((row) => ({ id: row.id, at: row.created_at, productId: row.product_id, productName: row.products?.name ?? '', unit: row.products?.unit ?? '', quantity: row.quantity, cost: row.cost, reason: row.reason, note: row.note })) as StockLoss[]);
+  sales.set((s.data ?? []).map((row) => ({ id: row.id, at: row.created_at, lines: (row.sale_lines ?? []).map((line: Record<string, unknown>) => ({ productId: line.product_id, name: line.product_name, quantity: line.quantity, unitPrice: line.unit_price, cost: line.unit_cost })), payments: (row.payments ?? []).map((payment: Record<string, unknown>) => ({ method: payment.method, amount: payment.amount })), total: row.total, cost: row.cost, hasCostDeficit: row.has_cost_deficit, source: 'supabase', sync: 'synced' })) as Sale[]);
+  expenses.set((e.data ?? []).map((row) => ({ id: row.id, at: row.created_at, category: row.category, description: row.description, amount: row.amount, method: row.method })));
+  activities.set((a.data ?? []).map((row) => ({ id: row.id, at: row.created_at, action: row.action, detail: row.detail })));
+  if (d.data?.[0]) {
+    const row = d.data[0];
+    const closingRow = (c.data ?? []).find((entry) => entry.day_id === row.id);
+    businessDay.set({ date: row.date, status: row.status, openedAt: row.opened_at, closedAt: row.closed_at, closing: closingRow ? parseClosingSnapshot({ ...closingRow.snapshot, id: closingRow.id }) : undefined });
+  } else businessDay.set(null);
+  stockEntries.set((b.data ?? []).map((row) => ({ id: row.id, at: row.received_at, productId: row.product_id, productName: row.products?.name ?? '', quantity: row.quantity, remaining: row.remaining, unitCost: row.unit_cost, supplier: row.supplier, paid: row.paid, note: row.note })));
+  stockLosses.set((l.data ?? []).map((row) => ({ id: row.id, at: row.created_at, productId: row.product_id, productName: row.products?.name ?? '', unit: row.products?.unit ?? '', quantity: row.quantity, cost: row.cost, reason: row.reason, note: row.note })) as StockLoss[]);
 }
 
 export async function loadBatchProfitReport(from: string, to: string): Promise<BatchProfit[]> {
@@ -99,8 +204,11 @@ export async function loadBatchProfitReport(from: string, to: string): Promise<B
     ...get(sales).map((sale) => ({ type: 'sale' as const, at: sale.at, sale })),
     ...get(stockLosses).map((loss) => ({ type: 'loss' as const, at: loss.at, loss }))
   ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+  const localDate = (value: string) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kigali' }).format(new Date(value));
+  const isInRange = (value: string) => (!from || localDate(value) >= from) && (!to || localDate(value) <= to);
 
   for (const event of events) {
+    const countInReport = isInRange(event.at);
     const allocations = event.type === 'sale'
       ? event.sale.lines.map((line) => ({ productId: line.productId, quantity: line.quantity, unitPrice: line.unitPrice, loss: false }))
       : [{ productId: event.loss.productId, quantity: event.loss.quantity, unitPrice: 0, loss: true }];
@@ -112,6 +220,7 @@ export async function loadBatchProfitReport(from: string, to: string): Promise<B
         const used = Math.min(needed, batch.available);
         batch.available -= used;
         needed -= used;
+        if (!countInReport) continue;
         if (allocation.loss) {
           batch.lost += used;
           batch.lossCost += used * batch.entry.unitCost;
@@ -124,9 +233,8 @@ export async function loadBatchProfitReport(from: string, to: string): Promise<B
     }
   }
 
-  const localDate = (value: string) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kigali' }).format(new Date(value));
   return batches
-    .filter(({ entry }) => (!from || localDate(entry.at) >= from) && (!to || localDate(entry.at) <= to))
+    .filter(({ entry, sold, lost }) => isInRange(entry.at) || sold > 0 || lost > 0)
     .map(({ entry, available, sold, lost, revenue, cost, lossCost }) => {
       const product = catalog.find((item) => item.id === entry.productId);
       return {
@@ -166,9 +274,70 @@ export async function updateDailyPrices(prices: Record<string, number>) {
   }
 }
 
-export async function closeDay() {
-  if (supabase) { const { error } = await supabase.rpc('close_business_day'); if (error) throw error; await refresh(); }
-  else { businessDay.update((day) => day ? { ...day, status: 'closed', closedAt: new Date().toISOString() } : day); audit('Day closed', 'Business day formally closed'); }
+export function getClosingPreview(countedCash?: number): DayClosingSnapshot {
+  const day = get(businessDay);
+  const date = day?.date ?? today();
+  const daySales = get(sales).filter((sale) => localDate(sale.at) === date);
+  const dayExpenses = get(expenses).filter((expense) => localDate(expense.at) === date);
+  const dayLosses = get(stockLosses).filter((loss) => localDate(loss.at) === date);
+  const payments: Record<PaymentMethod, number> = { cash: 0, momo: 0, bank: 0 };
+  for (const entry of daySales.flatMap((sale) => sale.payments)) payments[entry.method] += entry.amount;
+  const salesRevenue = daySales.reduce((sum, sale) => sum + sale.total, 0);
+  const costOfGoods = daySales.reduce((sum, sale) => sum + sale.cost, 0);
+  const expenseTotal = dayExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const stockLossTotal = dayLosses.reduce((sum, loss) => sum + loss.cost, 0);
+  const expectedCash = payments.cash - dayExpenses.filter((expense) => expense.method === 'cash').reduce((sum, expense) => sum + expense.amount, 0);
+  const physicalCash = countedCash === undefined ? expectedCash : Math.round(countedCash);
+  return {
+    date,
+    openedAt: day?.openedAt ?? new Date().toISOString(),
+    closedAt: new Date().toISOString(),
+    salesCount: daySales.length,
+    unitsSold: daySales.flatMap((sale) => sale.lines).reduce((sum, line) => sum + line.quantity, 0),
+    salesRevenue,
+    costOfGoods,
+    grossProfit: salesRevenue - costOfGoods,
+    expenseTotal,
+    stockLossTotal,
+    netProfit: salesRevenue - costOfGoods - expenseTotal - stockLossTotal,
+    payments,
+    expectedCash,
+    countedCash: physicalCash,
+    cashDifference: physicalCash - expectedCash,
+    stockRemaining: get(products).filter((product) => product.active).map((product) => ({ productId: product.id, name: product.name, category: product.category, unit: product.unit, quantity: product.stock })).toSorted((a, b) => a.name.localeCompare(b.name) || a.unit.localeCompare(b.unit))
+  };
+}
+
+function parseClosingSnapshot(value: Record<string, unknown>): DayClosingSnapshot {
+  const payments = value.payments as Record<string, unknown> | undefined;
+  const stock = Array.isArray(value.stockRemaining) ? value.stockRemaining : [];
+  return {
+    id: value.id ? String(value.id) : undefined,
+    date: String(value.date), openedAt: String(value.openedAt), closedAt: String(value.closedAt),
+    salesCount: Number(value.salesCount), unitsSold: Number(value.unitsSold), salesRevenue: Number(value.salesRevenue),
+    costOfGoods: Number(value.costOfGoods), grossProfit: Number(value.grossProfit), expenseTotal: Number(value.expenseTotal),
+    stockLossTotal: Number(value.stockLossTotal), netProfit: Number(value.netProfit),
+    payments: { cash: Number(payments?.cash ?? 0), momo: Number(payments?.momo ?? 0), bank: Number(payments?.bank ?? 0) },
+    expectedCash: Number(value.expectedCash), countedCash: Number(value.countedCash), cashDifference: Number(value.cashDifference),
+    stockRemaining: stock.map((item) => { const row = item as Record<string, unknown>; return { productId: String(row.productId), name: String(row.name), category: String(row.category), unit: String(row.unit), quantity: Number(row.quantity) }; })
+  };
+}
+
+export async function closeDay(countedCash = getClosingPreview().expectedCash): Promise<DayClosingSnapshot> {
+  if (!Number.isFinite(countedCash) || countedCash < 0) throw new Error('Counted cash must be zero or more.');
+  if (get(sales).some((sale) => sale.sync === 'queued' && localDate(sale.at) === today())) throw new Error('Sync all queued sales before closing the day.');
+  if (get(sales).some((sale) => sale.hasCostDeficit && localDate(sale.at) === today())) throw new Error('Resolve uncosted stock deficits before closing the day.');
+  if (supabase) {
+    const { data, error } = await supabase.rpc('close_business_day', { p_counted_cash: Math.round(countedCash) });
+    if (error) throw error;
+    const snapshot = parseClosingSnapshot(data as Record<string, unknown>);
+    await refresh();
+    return snapshot;
+  }
+  const snapshot = getClosingPreview(countedCash);
+  businessDay.update((day) => day ? { ...day, status: 'closed', closedAt: snapshot.closedAt, closing: snapshot } : day);
+  audit('Day closed', `${snapshot.date} · ${snapshot.salesCount} sales · Cash difference RWF ${snapshot.cashDifference.toLocaleString()}`);
+  return snapshot;
 }
 
 export async function reopenDay(reason: string) {
@@ -196,6 +365,7 @@ export async function createSale(lines: CartLine[], payments: Payment[]) {
   const sale: Sale = { id: saleId, at: new Date().toISOString(), lines: resolved, payments, total, cost: 0, hasCostDeficit: true, source: isDemo ? 'demo' : 'supabase', sync: isDemo ? 'synced' : 'queued' };
   sales.update((all) => [sale, ...all]);
   products.update((all) => all.map((p) => ({ ...p, stock: p.stock - (lines.find((l) => l.productId === p.id)?.quantity ?? 0) })));
+  reconcileDemoLedger();
   audit('Sale completed', `${saleId.slice(0, 8)} · RWF ${total.toLocaleString()}`);
   if (!isDemo) await queueSale(sale);
   return saleId;
@@ -234,10 +404,12 @@ export async function updateSale(saleId: string, lines: CartLine[], payments: Pa
   });
   const cost = resolved.reduce((sum, line) => sum + line.cost, 0);
   sales.update((all) => all.map((sale) => sale.id === saleId ? { ...sale, lines: resolved, payments, total, cost } : sale));
+  reconcileDemoLedger();
   audit('Sale edited', `${saleId.slice(0, 8)} · RWF ${total.toLocaleString()}`);
 }
 
 export async function addStock(input: { productId: string; quantity: number; unitCost: number; supplier: string; paid: number; note: string }) {
+  if (get(businessDay)?.date === today() && get(businessDay)?.status === 'closed') throw new Error('Reopen the business day before receiving stock.');
   if (input.quantity <= 0 || input.unitCost < 0 || input.paid < 0 || input.paid > input.quantity * input.unitCost) throw new Error('Check stock quantity, cost and payment.');
   if (supabase) { const { error } = await supabase.rpc('receive_stock', { p_product_id: input.productId, p_quantity: input.quantity, p_unit_cost: input.unitCost, p_supplier: input.supplier, p_paid: input.paid, p_note: input.note }); if (error) throw error; await refresh(); return; }
   const product = get(products).find((p) => p.id === input.productId);
@@ -254,6 +426,7 @@ export async function addProduct(input: Pick<Product, 'name' | 'category' | 'uni
 }
 
 export async function addExpense(input: Omit<Expense, 'id' | 'at'>) {
+  if (get(businessDay)?.date === today() && get(businessDay)?.status === 'closed') throw new Error('Reopen the business day before recording an expense.');
   if (input.amount <= 0) throw new Error('Enter an amount greater than zero.');
   if (supabase) { const { error } = await supabase.from('expenses').insert(input); if (error) throw error; await refresh(); return; }
   expenses.update((all) => [{ ...input, id: id(), at: new Date().toISOString() }, ...all]);
@@ -261,6 +434,7 @@ export async function addExpense(input: Omit<Expense, 'id' | 'at'>) {
 }
 
 export async function recordStockLoss(input: { productId: string; quantity: number; reason: StockLossReason; note: string }) {
+  if (get(businessDay)?.date === today() && get(businessDay)?.status === 'closed') throw new Error('Reopen the business day before recording stock damage or loss.');
   const product = get(products).find((entry) => entry.id === input.productId);
   if (!product) throw new Error('Choose a product.');
   if (!Number.isInteger(input.quantity) || input.quantity <= 0) throw new Error('Enter a whole quantity greater than zero.');

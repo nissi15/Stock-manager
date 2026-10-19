@@ -9,4 +9,24 @@ export type Expense = { id: string; at: string; category: string; description: s
 export type StockLossReason = 'Damaged' | 'Expired' | 'Stolen' | 'Missing' | 'Other';
 export type StockLoss = { id: string; at: string; productId: string; productName: string; unit: string; quantity: number; cost: number; reason: StockLossReason; note: string };
 export type Activity = { id: string; at: string; action: string; detail: string };
-export type BusinessDay = { date: string; status: 'open' | 'closed'; openedAt: string; closedAt?: string };
+export type ClosingStock = { productId: string; name: string; category: string; unit: string; quantity: number };
+export type DayClosingSnapshot = {
+  id?: string;
+  date: string;
+  openedAt: string;
+  closedAt: string;
+  salesCount: number;
+  unitsSold: number;
+  salesRevenue: number;
+  costOfGoods: number;
+  grossProfit: number;
+  expenseTotal: number;
+  stockLossTotal: number;
+  netProfit: number;
+  payments: Record<PaymentMethod, number>;
+  expectedCash: number;
+  countedCash: number;
+  cashDifference: number;
+  stockRemaining: ClosingStock[];
+};
+export type BusinessDay = { date: string; status: 'open' | 'closed'; openedAt: string; closedAt?: string; closing?: DayClosingSnapshot };

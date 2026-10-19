@@ -8,7 +8,7 @@ vi.mock('./supabase', () => ({ supabase: null }));
 
 import {
   activities, addExpense, addProduct, addStock, businessDay, closeDay,
-  createSale, expenses, openDay, products, recordStockLoss, reopenDay, sales, stockEntries, stockLosses,
+  createSale, expenses, loadBatchProfitReport, openDay, products, recordStockLoss, reopenDay, sales, stockEntries, stockLosses,
   updateDailyPrices, updateSale
 } from './store';
 
@@ -54,6 +54,21 @@ describe('business day', () => {
 
     expect(get(products).map((product) => product.price)).toEqual([57000, 43000]);
     expect(get(activities)[0].action).toBe('Daily prices updated');
+  });
+
+  it('saves a closing snapshot with cash reconciliation and stock remaining', async () => {
+    await openDay({ rice: 50000, sugar: 40000 });
+    const at = `${today()}T12:00:00.000Z`;
+    sales.set([{ id: 'sale-1', at, lines: [{ productId: 'rice', name: 'Bismati', quantity: 2, unitPrice: 25000, cost: 30000 }], payments: [{ method: 'cash', amount: 30000 }, { method: 'momo', amount: 20000 }], total: 50000, cost: 30000, hasCostDeficit: false, source: 'demo', sync: 'synced' }]);
+    expenses.set([{ id: 'expense-1', at, category: 'Transport', description: '', amount: 5000, method: 'cash' }]);
+    stockLosses.set([{ id: 'loss-1', at, productId: 'sugar', productName: 'Sugar', unit: '50 kg sack', quantity: 1, cost: 2000, reason: 'Damaged', note: '' }]);
+
+    const snapshot = await closeDay(24000);
+
+    expect(snapshot).toMatchObject({ salesCount: 1, unitsSold: 2, salesRevenue: 50000, costOfGoods: 30000, expenseTotal: 5000, stockLossTotal: 2000, netProfit: 13000, expectedCash: 25000, countedCash: 24000, cashDifference: -1000 });
+    expect(snapshot.stockRemaining).toEqual(expect.arrayContaining([expect.objectContaining({ productId: 'rice', quantity: 12 }), expect.objectContaining({ productId: 'sugar', quantity: 6 })]));
+    expect(get(businessDay)).toMatchObject({ status: 'closed', closing: { cashDifference: -1000 } });
+    await expect(addExpense({ category: 'Wages', description: '', amount: 1000, method: 'cash' })).rejects.toThrow('Reopen the business day');
   });
 });
 
@@ -105,6 +120,25 @@ describe('inventory', () => {
 });
 
 describe('sales and expenses', () => {
+  it('attributes sales in the report period to older FIFO batches', async () => {
+    stockEntries.set([
+      { id: 'new-batch', at: '2026-10-18T08:00:00Z', productId: 'rice', productName: 'Bismati', quantity: 5, remaining: 3, unitCost: 40000, supplier: '', paid: 0, note: '' },
+      { id: 'old-batch', at: '2026-10-10T08:00:00Z', productId: 'rice', productName: 'Bismati', quantity: 5, remaining: 0, unitCost: 30000, supplier: '', paid: 0, note: '' }
+    ]);
+    sales.set([
+      { id: 'current-sale', at: '2026-10-18T12:00:00Z', lines: [{ productId: 'rice', name: 'Bismati', quantity: 3, unitPrice: 55000, cost: 100000 }], payments: [{ method: 'cash', amount: 165000 }], total: 165000, cost: 100000, hasCostDeficit: false, source: 'demo', sync: 'synced' },
+      { id: 'old-sale', at: '2026-10-11T12:00:00Z', lines: [{ productId: 'rice', name: 'Bismati', quantity: 4, unitPrice: 50000, cost: 120000 }], payments: [{ method: 'cash', amount: 200000 }], total: 200000, cost: 120000, hasCostDeficit: false, source: 'demo', sync: 'synced' }
+    ]);
+
+    const report = await loadBatchProfitReport('2026-10-18', '2026-10-18');
+
+    expect(report.map((batch) => [batch.id, batch.quantitySold])).toEqual([
+      ['new-batch', 2],
+      ['old-batch', 1]
+    ]);
+    expect(report.reduce((sum, batch) => sum + batch.quantitySold, 0)).toBe(3);
+  });
+
   it('requires an open business day and exact payment total', async () => {
     const lines = [{ productId: 'rice', quantity: 2, unitPrice: 55000 }];
     await expect(createSale(lines, [{ method: 'cash', amount: 110000 }])).rejects.toThrow('Open the business day');
