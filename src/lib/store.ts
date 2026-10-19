@@ -324,9 +324,10 @@ function parseClosingSnapshot(value: Record<string, unknown>): DayClosingSnapsho
 }
 
 export async function closeDay(countedCash = getClosingPreview().expectedCash): Promise<DayClosingSnapshot> {
+  const closingDate = get(businessDay)?.date ?? today();
   if (!Number.isFinite(countedCash) || countedCash < 0) throw new Error('Counted cash must be zero or more.');
-  if (get(sales).some((sale) => sale.sync === 'queued' && localDate(sale.at) === today())) throw new Error('Sync all queued sales before closing the day.');
-  if (get(sales).some((sale) => sale.hasCostDeficit && localDate(sale.at) === today())) throw new Error('Resolve uncosted stock deficits before closing the day.');
+  if (get(sales).some((sale) => sale.sync === 'queued' && localDate(sale.at) === closingDate)) throw new Error('Sync all queued sales before closing the day.');
+  if (get(sales).some((sale) => sale.hasCostDeficit && localDate(sale.at) === closingDate)) throw new Error('Resolve uncosted stock deficits before closing the day.');
   if (supabase) {
     const { data, error } = await supabase.rpc('close_business_day', { p_counted_cash: Math.round(countedCash) });
     if (error) throw error;

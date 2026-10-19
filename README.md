@@ -44,7 +44,9 @@ remaining stock), the reopening reason in Activity, and that neither account's
 closing affects the other. It rolls back its fixtures, closings, and log entries.
 Run it when neither account is using the app; the test temporarily locks today's
 business-day rows. If either account has uncosted sales today, use clean test
-accounts instead.
+accounts instead. After migration 0011, run
+[`close_previous_day.sql`](supabase/tests/close_previous_day.sql) to verify that
+an overnight-open day can be closed; the test also rolls back all changes.
 
 For a real-Auth-session, read-only check through the Supabase API, put at least
 one product in each test account, then run `npm run test:api-isolation` with
@@ -62,7 +64,7 @@ tests cover the latter.
 3. Copy `.env.example` to `.env` and fill `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` with the project URL and publishable key. These values identify the browser app and are visible in DevTools; database access is protected by the included owner-scoped RLS policies. **Never put a secret or service-role key in this file.**
 4. Restart the dev server, sign up, create products, record opening stock through **Add stock**, and start the day.
 
-The migrations enforce per-user row-level security and use database functions for atomic day opening, stock receipt, FIFO-costed sales, stock-loss adjustments, and day close. Migration `0005_batch_profit_ledger.sql` preserves the exact receipt batch consumed by every new sale or stock loss so realized profit can be reported batch by batch. Migration `0007_day_closing_snapshots.sql` stores an authoritative closing snapshot with cash reconciliation and remaining stock, and blocks new transactions until a closed day is reopened. Migration `0008_restrict_function_execute.sql` removes anonymous execution grants from the business functions. Migration `0009_restore_daily_price_rpc.sql` restores the missing price-update RPC without overwriting newer sale logic; `0010_restore_stock_floor_trigger.sql` restores the negative-stock guard. Historical consumption from before batch tracking is marked as a legacy gap rather than being assigned an invented profit. Sales use client-generated UUIDs for retry idempotency.
+The migrations enforce per-user row-level security and use database functions for atomic day opening, stock receipt, FIFO-costed sales, stock-loss adjustments, and day close. Migration `0005_batch_profit_ledger.sql` preserves the exact receipt batch consumed by every new sale or stock loss so realized profit can be reported batch by batch. Migration `0007_day_closing_snapshots.sql` stores an authoritative closing snapshot with cash reconciliation and remaining stock, and blocks new transactions until a closed day is reopened. Migration `0008_restrict_function_execute.sql` removes anonymous execution grants from the business functions. Migration `0009_restore_daily_price_rpc.sql` restores the missing price-update RPC without overwriting newer sale logic; `0010_restore_stock_floor_trigger.sql` restores the negative-stock guard. Migration `0011_close_previous_business_day.sql` lets an account reconcile an older day left open overnight before starting a new one. Historical consumption from before batch tracking is marked as a legacy gap rather than being assigned an invented profit. Sales use client-generated UUIDs for retry idempotency.
 
 ## Current scope
 

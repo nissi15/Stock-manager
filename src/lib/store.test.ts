@@ -70,6 +70,19 @@ describe('business day', () => {
     expect(get(businessDay)).toMatchObject({ status: 'closed', closing: { cashDifference: -1000 } });
     await expect(addExpense({ category: 'Wages', description: '', amount: 1000, method: 'cash' })).rejects.toThrow('Reopen the business day');
   });
+
+  it('closes an open previous day using that day’s transactions', async () => {
+    const previousDate = new Date(`${today()}T12:00:00Z`);
+    previousDate.setUTCDate(previousDate.getUTCDate() - 1);
+    const date = previousDate.toISOString().slice(0, 10);
+    businessDay.set({ date, status: 'open', openedAt: `${date}T08:00:00Z` });
+    sales.set([{ id: 'previous-sale', at: `${date}T12:00:00Z`, lines: [{ productId: 'rice', name: 'Bismati', quantity: 1, unitPrice: 50000, cost: 30000 }], payments: [{ method: 'cash', amount: 50000 }], total: 50000, cost: 30000, hasCostDeficit: false, source: 'demo', sync: 'synced' }]);
+
+    const snapshot = await closeDay(50000);
+
+    expect(snapshot).toMatchObject({ date, salesCount: 1, salesRevenue: 50000, expectedCash: 50000, countedCash: 50000 });
+    expect(get(businessDay)).toMatchObject({ date, status: 'closed' });
+  });
 });
 
 describe('inventory', () => {
