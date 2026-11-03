@@ -236,7 +236,7 @@ begin
     'public.open_business_day(date,jsonb)',
     'public.create_product(text,text,text,bigint)',
     'public.receive_stock(uuid,integer,bigint,text,bigint,text)',
-    'public.record_sale(uuid,jsonb,jsonb)',
+    'public.record_sale(uuid,jsonb,jsonb,timestamptz)',
     'public.edit_sale(uuid,jsonb,jsonb)',
     'public.update_daily_prices(jsonb)',
     'public.record_stock_loss(uuid,integer,text,text)',
