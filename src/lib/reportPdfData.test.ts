@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { paymentsForDay, productsSoldForReport } from './reportPdfData';
+import { paymentsForSales, productsSoldForReport } from './reportPdfData';
 import type { Product, Sale } from './types';
 
 const products: Product[] = [
@@ -29,8 +29,8 @@ const sales: Sale[] = [
 ];
 
 describe('report PDF data', () => {
-  it('counts only payments from the current Kigali business day', () => {
-    expect(paymentsForDay(sales, '2026-10-19')).toEqual({ cash: 40000, momo: 60000, bank: 210000 });
+  it('totals payments only from the sales selected for the report period', () => {
+    expect(paymentsForSales(sales.slice(0, 2))).toEqual({ cash: 40000, momo: 60000, bank: 210000 });
   });
 
   it('groups sold units by product identity and distinguishes duplicate names', () => {

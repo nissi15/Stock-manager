@@ -1,12 +1,8 @@
 import type { PaymentMethod, Product, Sale } from './types';
 
-const businessDate = (value: string) =>
-  new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kigali' }).format(new Date(value));
-
-export function paymentsForDay(sales: Sale[], date: string): Record<PaymentMethod, number> {
+export function paymentsForSales(sales: Sale[]): Record<PaymentMethod, number> {
   const totals: Record<PaymentMethod, number> = { cash: 0, momo: 0, bank: 0 };
   for (const sale of sales) {
-    if (businessDate(sale.at) !== date) continue;
     for (const payment of sale.payments) totals[payment.method] += payment.amount;
   }
   return totals;

@@ -3,6 +3,8 @@ import type { Activity, BatchProfit, BusinessDay, DayClosingSnapshot, Expense, P
 import { today } from './format';
 import { supabase } from './supabase';
 import { generateDemoScenario } from './demoScenario';
+import { legacyQueueCount, offlineSnapshotFor, queuedSalesFor, removeQueuedSale, saveOfflineSnapshot, saveQueuedSale, type QueuedSale } from './offlineQueue';
+import { productsSoldForReport } from './reportPdfData';
 
 export const isDemo = !supabase;
 const demo = isDemo ? generateDemoScenario() : null;
@@ -15,6 +17,8 @@ export const activities = writable<Activity[]>(demo?.activities ?? []);
 export const businessDay = writable<BusinessDay | null>(demo?.businessDay ?? null);
 export const ready = writable(false);
 export const online = writable(typeof navigator === 'undefined' ? true : navigator.onLine);
+export const offlineQueueWarning = writable('');
+export const queueSyncing = writable(false);
 const key = 'stock-manager-demo-v3';
 const id = () => crypto.randomUUID();
 const audit = (action: string, detail: string) => activities.update((all) => [{ id: id(), at: new Date().toISOString(), action, detail }, ...all]);
@@ -39,9 +43,11 @@ export function initStore() {
     reconcileDemoLedger();
     for (const store of [products, sales, stockEntries, expenses, stockLosses, activities, businessDay]) store.subscribe(persist);
   }
-  window.addEventListener('online', () => { online.set(true); void syncQueuedSales(); });
+  window.addEventListener('online', () => { online.set(true); void syncQueuedSales().catch(() => offlineQueueWarning.set('Offline sales are still on this device. Open Sales and retry the sync.')); });
   window.addEventListener('offline', () => online.set(false));
+  window.setInterval(() => { if (navigator.onLine) void syncQueuedSales().catch(() => offlineQueueWarning.set('Offline sales are still on this device. Open Sales and retry the sync.')); }, 30_000);
   ready.set(true);
+  if (!isDemo && navigator.storage?.persist) void navigator.storage.persist().catch(() => undefined);
   if (isDemo) persist();
 }
 
@@ -113,6 +119,31 @@ export function resetAccountData(accountId: string | null = null) {
   stockLosses.set([]);
   activities.set([]);
   businessDay.set(null);
+  offlineQueueWarning.set('');
+}
+
+function mergeQueuedSales(serverProducts: Product[], serverSales: Sale[], queued: QueuedSale[]) {
+  const existingIds = new Set(serverSales.map((sale) => sale.id));
+  const pending = queued.filter((entry) => !existingIds.has(entry.id));
+  const quantities = new Map<string, number>();
+  for (const entry of pending) for (const line of entry.sale.lines) quantities.set(line.productId, (quantities.get(line.productId) ?? 0) + line.quantity);
+  return {
+    products: serverProducts.map((product) => ({ ...product, stock: Math.max(0, product.stock - (quantities.get(product.id) ?? 0)) })),
+    sales: [...serverSales, ...pending.map((entry) => ({ ...entry.sale, sync: entry.state, syncError: entry.lastError }))]
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()) as Sale[]
+  };
+}
+
+export async function restoreOfflineAccount(accountId: string): Promise<boolean> {
+  if (!supabase || activeAccountId !== accountId) return false;
+  const [snapshot, queued, legacyCount] = await Promise.all([offlineSnapshotFor(accountId), queuedSalesFor(accountId), legacyQueueCount()]);
+  if (activeAccountId !== accountId) return false;
+  const merged = mergeQueuedSales(snapshot?.products ?? [], [], queued);
+  products.set(merged.products);
+  sales.set(merged.sales);
+  businessDay.set(snapshot?.businessDay ?? null);
+  if (legacyCount) offlineQueueWarning.set('This browser contains older offline records without an account ID. They were kept but will not upload automatically. Contact support before clearing browser data.');
+  return !!snapshot;
 }
 
 export async function refresh() {
@@ -160,17 +191,28 @@ export async function refresh() {
   if (b.error) throw b.error;
   if (l.error) throw l.error;
   if (c.error) throw c.error;
-  products.set((p.data ?? []).map((row) => ({ id: row.id, name: row.name, category: row.category, unit: row.unit, stock: row.stock, price: row.price, active: row.active })));
-  sales.set((s.data ?? []).map((row) => ({ id: row.id, at: row.created_at, lines: (row.sale_lines ?? []).map((line: Record<string, unknown>) => ({ productId: line.product_id, name: line.product_name, quantity: line.quantity, unitPrice: line.unit_price, cost: line.unit_cost })), payments: (row.payments ?? []).map((payment: Record<string, unknown>) => ({ method: payment.method, amount: payment.amount })), total: row.total, cost: row.cost, hasCostDeficit: row.has_cost_deficit, source: 'supabase', sync: 'synced' })) as Sale[]);
-  expenses.set((e.data ?? []).map((row) => ({ id: row.id, at: row.created_at, category: row.category, description: row.description, amount: row.amount, method: row.method })));
-  activities.set((a.data ?? []).map((row) => ({ id: row.id, at: row.created_at, action: row.action, detail: row.detail })));
+  const serverProducts = (p.data ?? []).map((row) => ({ id: row.id, name: row.name, category: row.category, unit: row.unit, stock: row.stock, price: row.price, active: row.active })) as Product[];
+  const serverSales = (s.data ?? []).map((row) => ({ id: row.id, at: row.created_at, lines: (row.sale_lines ?? []).map((line: Record<string, unknown>) => ({ productId: line.product_id, name: line.product_name, quantity: line.quantity, unitPrice: line.unit_price, cost: line.unit_cost })), payments: (row.payments ?? []).map((payment: Record<string, unknown>) => ({ method: payment.method, amount: payment.amount })), total: row.total, cost: row.cost, hasCostDeficit: row.has_cost_deficit, source: 'supabase', sync: 'synced' })) as Sale[];
+  let serverDay: BusinessDay | null = null;
   if (d.data?.[0]) {
     const row = d.data[0];
     const closingRow = (c.data ?? []).find((entry) => entry.day_id === row.id);
-    businessDay.set({ date: row.date, status: row.status, openedAt: row.opened_at, closedAt: row.closed_at, closing: closingRow ? parseClosingSnapshot({ ...closingRow.snapshot, id: closingRow.id }) : undefined });
-  } else businessDay.set(null);
+    serverDay = { date: row.date, status: row.status, openedAt: row.opened_at, closedAt: row.closed_at, closing: closingRow ? parseClosingSnapshot({ ...closingRow.snapshot, id: closingRow.id }) : undefined };
+  }
+  const queued = await queuedSalesFor(accountId);
+  if (requestGeneration !== refreshGeneration || activeAccountId !== accountId) return;
+  const merged = mergeQueuedSales(serverProducts, serverSales, queued);
+  products.set(merged.products);
+  sales.set(merged.sales);
+  expenses.set((e.data ?? []).map((row) => ({ id: row.id, at: row.created_at, category: row.category, description: row.description, amount: row.amount, method: row.method })));
+  activities.set((a.data ?? []).map((row) => ({ id: row.id, at: row.created_at, action: row.action, detail: row.detail })));
+  businessDay.set(serverDay);
+  try { await saveOfflineSnapshot({ ownerId: accountId, savedAt: new Date().toISOString(), products: serverProducts, businessDay: serverDay }); }
+  catch { if (activeAccountId === accountId) offlineQueueWarning.set('Offline storage is unavailable. Do not record sales without a working internet connection.'); }
+  if (requestGeneration !== refreshGeneration || activeAccountId !== accountId) return;
   stockEntries.set((b.data ?? []).map((row) => ({ id: row.id, at: row.received_at, productId: row.product_id, productName: row.products?.name ?? '', quantity: row.quantity, remaining: row.remaining, unitCost: row.unit_cost, supplier: row.supplier, paid: row.paid, note: row.note })));
   stockLosses.set((l.data ?? []).map((row) => ({ id: row.id, at: row.created_at, productId: row.product_id, productName: row.products?.name ?? '', unit: row.products?.unit ?? '', quantity: row.quantity, cost: row.cost, reason: row.reason, note: row.note })) as StockLoss[]);
+  online.set(true);
 }
 
 export async function loadBatchProfitReport(from: string, to: string): Promise<BatchProfit[]> {
@@ -304,6 +346,7 @@ export function getClosingPreview(countedCash?: number): DayClosingSnapshot {
     expectedCash,
     countedCash: physicalCash,
     cashDifference: physicalCash - expectedCash,
+    productsSold: productsSoldForReport(daySales, get(products)),
     stockRemaining: get(products).filter((product) => product.active).map((product) => ({ productId: product.id, name: product.name, category: product.category, unit: product.unit, quantity: product.stock })).toSorted((a, b) => a.name.localeCompare(b.name) || a.unit.localeCompare(b.unit))
   };
 }
@@ -319,6 +362,7 @@ function parseClosingSnapshot(value: Record<string, unknown>): DayClosingSnapsho
     stockLossTotal: Number(value.stockLossTotal), netProfit: Number(value.netProfit),
     payments: { cash: Number(payments?.cash ?? 0), momo: Number(payments?.momo ?? 0), bank: Number(payments?.bank ?? 0) },
     expectedCash: Number(value.expectedCash), countedCash: Number(value.countedCash), cashDifference: Number(value.cashDifference),
+    productsSold: Array.isArray(value.productsSold) ? value.productsSold.map((item) => { const row = item as Record<string, unknown>; return { label: String(row.label), units: Number(row.units) }; }) : [],
     stockRemaining: stock.map((item) => { const row = item as Record<string, unknown>; return { productId: String(row.productId), name: String(row.name), category: String(row.category), unit: String(row.unit), quantity: Number(row.quantity) }; })
   };
 }
@@ -326,7 +370,12 @@ function parseClosingSnapshot(value: Record<string, unknown>): DayClosingSnapsho
 export async function closeDay(countedCash = getClosingPreview().expectedCash): Promise<DayClosingSnapshot> {
   const closingDate = get(businessDay)?.date ?? today();
   if (!Number.isFinite(countedCash) || countedCash < 0) throw new Error('Counted cash must be zero or more.');
-  if (get(sales).some((sale) => sale.sync === 'queued' && localDate(sale.at) === closingDate)) throw new Error('Sync all queued sales before closing the day.');
+  // The in-memory list can lag IndexedDB after a reload or another tab's sale.
+  // Fail closed if the queue cannot be read; otherwise an unsynced sale could be omitted.
+  if (supabase && activeAccountId && (await queuedSalesFor(activeAccountId)).some((entry) => entry.dayDate === closingDate)) {
+    throw new Error('Sync or reconcile all offline sales before closing the day.');
+  }
+  if (get(sales).some((sale) => sale.sync !== 'synced' && localDate(sale.at) === closingDate)) throw new Error('Sync or reconcile all offline sales before closing the day.');
   if (get(sales).some((sale) => sale.hasCostDeficit && localDate(sale.at) === closingDate)) throw new Error('Resolve uncosted stock deficits before closing the day.');
   if (supabase) {
     const { data, error } = await supabase.rpc('close_business_day', { p_counted_cash: Math.round(countedCash) });
@@ -348,33 +397,37 @@ export async function reopenDay(reason: string) {
 }
 
 export async function createSale(lines: CartLine[], payments: Payment[]) {
+  const soldAt = new Date().toISOString();
   const total = lines.reduce((sum, l) => sum + l.quantity * l.unitPrice, 0);
   if (!get(businessDay) || get(businessDay)?.status !== 'open') throw new Error('Open the business day before selling.');
+  if (!isDemo && get(businessDay)?.date !== localDate(soldAt)) throw new Error('Close the previous business day before recording new sales.');
   if (!lines.length || lines.some((l) => l.quantity <= 0 || l.unitPrice < 0)) throw new Error('Check the sale items.');
   const catalog = get(products);
-  const unavailable = lines.find((line) => line.quantity > (catalog.find((product) => product.id === line.productId)?.stock ?? 0));
+  const unavailable = lines.find((line) => lines.filter((other) => other.productId === line.productId).reduce((sum, other) => sum + other.quantity, 0) > (catalog.find((product) => product.id === line.productId)?.stock ?? 0));
   if (unavailable) throw new Error(`Not enough stock for ${catalog.find((product) => product.id === unavailable.productId)?.name ?? 'this product'}.`);
   if (payments.reduce((sum, p) => sum + p.amount, 0) !== total) throw new Error('Payments must equal the sale total.');
   const saleId = id();
-  if (supabase && get(online)) {
-    const { error } = await supabase.rpc('record_sale', { p_id: saleId, p_lines: lines, p_payments: payments });
-    if (error) throw error;
-    await refresh();
-    return saleId;
-  }
   const resolved = lines.map((line) => ({ ...line, name: catalog.find((p) => p.id === line.productId)?.name ?? 'Unknown', cost: 0 }));
-  const sale: Sale = { id: saleId, at: new Date().toISOString(), lines: resolved, payments, total, cost: 0, hasCostDeficit: true, source: isDemo ? 'demo' : 'supabase', sync: isDemo ? 'synced' : 'queued' };
+  const sale: Sale = { id: saleId, at: soldAt, lines: resolved, payments, total, cost: 0, hasCostDeficit: true, source: isDemo ? 'demo' : 'supabase', sync: isDemo ? 'synced' : 'queued' };
+  if (!isDemo) {
+    if (!activeAccountId) throw new Error('Sign in again before recording a sale.');
+    await saveQueuedSale({ id: saleId, ownerId: activeAccountId, dayDate: get(businessDay)!.date, sale, state: 'queued' });
+  }
   sales.update((all) => [sale, ...all]);
-  products.update((all) => all.map((p) => ({ ...p, stock: p.stock - (lines.find((l) => l.productId === p.id)?.quantity ?? 0) })));
+  products.update((all) => all.map((p) => ({ ...p, stock: p.stock - lines.filter((line) => line.productId === p.id).reduce((sum, line) => sum + line.quantity, 0) })));
   reconcileDemoLedger();
   audit('Sale completed', `${saleId.slice(0, 8)} · RWF ${total.toLocaleString()}`);
-  if (!isDemo) await queueSale(sale);
+  if (!isDemo && typeof navigator !== 'undefined' && navigator.onLine) {
+    try { await syncQueuedSales(); }
+    catch { offlineQueueWarning.set('Sale saved on this device, but it could not be uploaded yet. Keep this browser data and retry the sync.'); }
+  }
   return saleId;
 }
 
 export async function updateSale(saleId: string, lines: CartLine[], payments: Payment[]) {
   const original = get(sales).find((sale) => sale.id === saleId);
   if (!original) throw new Error('Sale not found.');
+  if (original.sync !== 'synced') throw new Error('Wait for this sale to sync before editing it.');
   const saleDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kigali' }).format(new Date(original.at));
   if (saleDate !== today() || get(businessDay)?.status !== 'open') throw new Error('Only sales from the open business day can be edited.');
   if (!lines.length || lines.some((line) => line.quantity <= 0 || line.unitPrice < 0)) throw new Error('Check the sale items.');
@@ -465,28 +518,95 @@ export async function recordStockLoss(input: { productId: string; quantity: numb
   audit('Stock loss recorded', `${input.quantity} × ${product.name} · ${input.reason} · RWF ${cost.toLocaleString()}`);
 }
 
-// IndexedDB keeps unsynced sales durable even if the tab closes.
-async function queueSale(sale: Sale) {
-  const db = await openQueue();
-  const tx = db.transaction('sales', 'readwrite');
-  tx.objectStore('sales').put(sale);
+let syncInFlight: Promise<void> | null = null;
+let syncInFlightOwner: string | null = null;
+
+/** Retry transport/auth/server failures; business-rule rejections need review. */
+export function isRetryableSyncError(error: { code?: string | null; message?: string | null; status?: number } | null | undefined): boolean {
+  if (!error) return false;
+  const code = error.code ?? '';
+  if (/^(08|53|57)/.test(code)) return true;
+  if (['40001', '40P01', '23505', 'PGRST002', 'PGRST202', 'PGRST301', 'PGRST303'].includes(code)) return true;
+  if (error.status === 429 || (error.status !== undefined && error.status >= 500)) return true;
+  return !code && /fetch|network|offline|timeout|abort|connection/i.test(error.message ?? '');
 }
-function openQueue(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open('stock-manager-queue', 1);
-    request.onupgradeneeded = () => request.result.createObjectStore('sales', { keyPath: 'id' });
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-export async function syncQueuedSales() {
-  if (!supabase || !get(online)) return;
-  const db = await openQueue();
-  const queued = await new Promise<Sale[]>((resolve, reject) => { const req = db.transaction('sales').objectStore('sales').getAll(); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
-  for (const sale of queued) {
-    const { error } = await supabase.rpc('record_sale', { p_id: sale.id, p_lines: sale.lines.map(({ productId, quantity, unitPrice }) => ({ productId, quantity, unitPrice })), p_payments: sale.payments });
-    if (error) break;
-    db.transaction('sales', 'readwrite').objectStore('sales').delete(sale.id);
+
+export function syncQueuedSales(): Promise<void> {
+  if (!supabase || (typeof navigator !== 'undefined' && !navigator.onLine)) return Promise.resolve();
+  const requestedOwner = activeAccountId;
+  if (!requestedOwner) return Promise.resolve();
+  if (syncInFlight) {
+    if (syncInFlightOwner === requestedOwner) return syncInFlight;
+    return syncInFlight.then(() => activeAccountId === requestedOwner ? syncQueuedSales() : undefined);
   }
-  await refresh();
+  syncInFlightOwner = requestedOwner;
+  syncInFlight = runQueuedSaleSync().finally(() => { syncInFlight = null; syncInFlightOwner = null; });
+  return syncInFlight;
+}
+
+async function runQueuedSaleSync() {
+  if (!supabase) return;
+  const { data, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !data.session?.user.id) return;
+  const ownerId = data.session.user.id;
+  if (ownerId !== activeAccountId) return;
+  queueSyncing.set(true);
+  try {
+    const queued = await queuedSalesFor(ownerId);
+    let uploaded = false;
+    for (const entry of queued) {
+      if (activeAccountId !== ownerId) return;
+      if (entry.state === 'needs_attention') {
+        offlineQueueWarning.set('An offline sale needs review. Open Sales, check its error, and retry after resolving it.');
+        break;
+      }
+      const { data: current } = await supabase.auth.getSession();
+      if (current.session?.user.id !== ownerId || activeAccountId !== ownerId) return;
+      const { error } = await supabase.rpc('record_offline_sale', {
+        p_id: entry.id,
+        p_sold_at: entry.sale.at,
+        p_day_date: entry.dayDate,
+        p_lines: entry.sale.lines.map(({ productId, quantity, unitPrice }) => ({ productId, quantity, unitPrice })),
+        p_payments: entry.sale.payments
+      });
+      if (error) {
+        const text = error.message || 'Supabase rejected this sale.';
+        if (isRetryableSyncError(error)) {
+          if (/fetch|network|offline|timeout|connection/i.test(text)) online.set(false);
+          if (activeAccountId === ownerId) offlineQueueWarning.set('Offline sales are saved on this device and will retry when the connection returns.');
+        } else {
+          const blocked: QueuedSale = { ...entry, state: 'needs_attention', lastError: text };
+          await saveQueuedSale(blocked);
+          if (activeAccountId === ownerId) {
+            sales.update((all) => all.map((sale) => sale.id === entry.id ? { ...sale, sync: 'needs_attention', syncError: text } : sale));
+            offlineQueueWarning.set(`Offline sale needs review: ${text}`);
+          }
+        }
+        break;
+      }
+      await removeQueuedSale(entry.id);
+      if (activeAccountId === ownerId) {
+        sales.update((all) => all.map((sale) => sale.id === entry.id ? { ...sale, sync: 'synced', syncError: undefined } : sale));
+        online.set(true);
+      }
+      uploaded = true;
+    }
+    if (uploaded && activeAccountId === ownerId) await refresh();
+    if (activeAccountId === ownerId && (await queuedSalesFor(ownerId)).length === 0 && (await legacyQueueCount()) === 0) offlineQueueWarning.set('');
+  } finally { queueSyncing.set(false); }
+}
+
+export async function retryQueuedSales() {
+  if (!activeAccountId) return;
+  try {
+    for (const entry of await queuedSalesFor(activeAccountId)) {
+      if (entry.state !== 'needs_attention') continue;
+      await saveQueuedSale({ ...entry, state: 'queued', lastError: undefined });
+      sales.update((all) => all.map((sale) => sale.id === entry.id ? { ...sale, sync: 'queued', syncError: undefined } : sale));
+    }
+    offlineQueueWarning.set('');
+    await syncQueuedSales();
+  } catch {
+    offlineQueueWarning.set('Offline sales are still on this device. Check the connection and retry.');
+  }
 }

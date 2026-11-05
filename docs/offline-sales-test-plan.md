@@ -1,0 +1,13 @@
+# Offline sales test
+
+Migration `0012_offline_sale_recovery.sql` was applied to the shared Supabase project on November 5, 2026. Its SQL fixture test passed and rolled back all test rows. The new client is still local; do not deploy it until the browser checks pass. The shared project contains other accounts, so use only the designated test accounts for browser sales. A synced test sale persists and is not undone by the schema rollback script.
+
+1. Keep migration `0013_day_closing_product_summary.sql` and Claude's alternate `0012_queued_sale_timestamps.sql` unapplied. Migration 0012 and `supabase/tests/offline_sale_recovery.sql` already passed. The SQL test covered original-day assignment, exactly-once retry (including after day close), cross-account product and sale-ID rejection, a closed-day rejection, and function grants.
+2. Open the local production preview at `http://127.0.0.1:4173/` in the browser that will go offline. Sign in to a designated test account while online. Open today’s business day and receive costed stock if needed. Wait for the catalog to load and the service worker to install.
+3. Disconnect that computer from the internet. Record a small sale. It must say it is saved on this device, appear as `Queued`, and reduce local available stock. Close every browser window, restart the computer, and reopen the app while still offline. The queued sale, stock adjustment, and open day must remain. Do not clear browser/site data.
+4. Reconnect. The sale must change to `Synced` once, with the original time and business day in Supabase. Reload twice and confirm there is still one sale, one payment, one stock deduction, and one activity entry.
+5. Queue a sale on account A, sign out, then sign in to account B on the same browser. B must see none of A’s queue or catalog, and B must not upload A’s sale. Sign back into A and verify its queue is still there.
+6. On two computers sharing an account, leave one offline with a queued sale. Use the other to consume the remaining stock, then reconnect the first. The sale must remain locally marked `Needs review`; it must not disappear or be silently uploaded with negative stock.
+7. In an isolated project later, leave an offline sale unsynced past day close on another computer, then reconnect. The sale must remain `Needs review` and must **not** be assigned to today. This requires deliberate manual reconciliation; do not use this workflow with real trading until staff have a procedure for it.
+
+Browser storage is not a backup. Clearing site data, reinstalling the browser, or losing the device can remove unsynced sales. Confirm all devices have synced before closing a day; a computer cannot see another computer’s offline queue.

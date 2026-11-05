@@ -66,6 +66,7 @@ describe('business day', () => {
     const snapshot = await closeDay(24000);
 
     expect(snapshot).toMatchObject({ salesCount: 1, unitsSold: 2, salesRevenue: 50000, costOfGoods: 30000, expenseTotal: 5000, stockLossTotal: 2000, netProfit: 13000, expectedCash: 25000, countedCash: 24000, cashDifference: -1000 });
+    expect(snapshot.productsSold).toEqual([{ label: 'Bismati - 25 kg sack', units: 2 }]);
     expect(snapshot.stockRemaining).toEqual(expect.arrayContaining([expect.objectContaining({ productId: 'rice', quantity: 12 }), expect.objectContaining({ productId: 'sugar', quantity: 6 })]));
     expect(get(businessDay)).toMatchObject({ status: 'closed', closing: { cashDifference: -1000 } });
     await expect(addExpense({ category: 'Wages', description: '', amount: 1000, method: 'cash' })).rejects.toThrow('Reopen the business day');
