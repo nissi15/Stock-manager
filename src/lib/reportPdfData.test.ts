@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { paymentsForSales, productsSoldForReport } from './reportPdfData';
+import { paymentsForSales, productsSoldForReport, splitReportSales } from './reportPdfData';
 import type { Product, Sale } from './types';
 
 const products: Product[] = [
@@ -38,5 +38,16 @@ describe('report PDF data', () => {
       { label: 'Zahabu - 20 L jerrycan', units: 3 },
       { label: 'Zahabu - 25 kg sack', units: 2 }
     ]);
+  });
+});
+
+describe('rejected offline sales in reports', () => {
+  it('leaves a rejected sale out of the totals but keeps one that is still waiting to sync', () => {
+    const mixed: Sale[] = [sales[0], { ...sales[1], id: 'waiting', sync: 'queued' }, { ...sales[2], id: 'rejected', sync: 'needs_attention', syncError: 'Not enough stock' }];
+    const { counted, excluded } = splitReportSales(mixed);
+    expect(counted.map((sale) => sale.id)).toEqual(['today-one', 'waiting']);
+    expect(excluded.map((sale) => sale.id)).toEqual(['rejected']);
+    expect(counted.reduce((sum, sale) => sum + sale.total, 0)).toBe(310000);
+    expect(paymentsForSales(counted).cash).toBe(40000);
   });
 });

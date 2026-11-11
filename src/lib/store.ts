@@ -554,6 +554,7 @@ async function runQueuedSaleSync() {
   try {
     const queued = await queuedSalesFor(ownerId);
     let uploaded = false;
+    let rejected = false;
     for (const entry of queued) {
       if (activeAccountId !== ownerId) return;
       if (entry.state === 'needs_attention') {
@@ -577,6 +578,7 @@ async function runQueuedSaleSync() {
         } else {
           const blocked: QueuedSale = { ...entry, state: 'needs_attention', lastError: text };
           await saveQueuedSale(blocked);
+          rejected = true;
           if (activeAccountId === ownerId) {
             sales.update((all) => all.map((sale) => sale.id === entry.id ? { ...sale, sync: 'needs_attention', syncError: text } : sale));
             offlineQueueWarning.set(`Offline sale needs review: ${text}`);
@@ -592,6 +594,9 @@ async function runQueuedSaleSync() {
       uploaded = true;
     }
     if (uploaded && activeAccountId === ownerId) await refresh();
+    // A rejection usually means another device changed stock or the day. Reload so this
+    // screen shows what the server has; the rejected sale stays listed from the local queue.
+    else if (rejected && activeAccountId === ownerId) await refresh().catch(() => {});
     if (activeAccountId === ownerId && (await queuedSalesFor(ownerId)).length === 0 && (await legacyQueueCount()) === 0) offlineQueueWarning.set('');
   } finally { queueSyncing.set(false); }
 }

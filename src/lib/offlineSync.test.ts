@@ -127,6 +127,18 @@ describe('offline sale recovery', () => {
     expect(backend.rpcCalls).toHaveLength(2);
   });
 
+  it('reloads server data after a rejection so another device’s sale and stock show up', async () => {
+    const id = await createSale([{ productId: 'account-a-product', quantity: 1, unitPrice: 3000 }], [{ method: 'cash', amount: 3000 }]);
+    backend.savedSales.push({ ownerId: 'account-a', id: 'other-device-sale', at: new Date().toISOString(), lines: [{ productId: 'account-a-product', quantity: 4, unitPrice: 3000 }], payments: [{ method: 'cash', amount: 12000 }] });
+    backend.nextError = { message: 'Not enough stock for Rice; offline sale needs review', code: 'P0001' };
+    vi.stubGlobal('navigator', { onLine: true }); online.set(true);
+    await syncQueuedSales();
+    expect(get(sales).map((sale) => sale.id)).toContain('other-device-sale');
+    expect(get(sales).find((sale) => sale.id === id)).toMatchObject({ sync: 'needs_attention' });
+    expect(get(products)[0].stock).toBe(5);
+    expect(await queuedSalesFor('account-a')).toMatchObject([{ id, state: 'needs_attention' }]);
+  });
+
   it('blocks closing from the durable queue even when the in-memory sale list is empty', async () => {
     const id = await createSale([{ productId: 'account-a-product', quantity: 1, unitPrice: 3000 }], [{ method: 'cash', amount: 3000 }]);
     sales.set([]);

@@ -27,13 +27,15 @@ worker.addEventListener('fetch', (event) => {
 
   if (event.request.mode === 'navigate') {
     event.respondWith(fetch(event.request).catch(async () => {
-      const cached = await caches.match(appUrl);
+      const cached = await caches.match(appUrl, { ignoreVary: true });
       return cached ?? Response.error();
     }));
     return;
   }
 
   if (shellFiles.includes(event.request.url)) {
-    event.respondWith(caches.match(event.request).then((cached) => cached ?? fetch(event.request)));
+    // Match by URL and ignore Vary: script requests carry different headers than the install-time
+    // fetch, so a header-sensitive match misses the cache and the app cannot open offline.
+    event.respondWith(caches.match(event.request.url, { ignoreVary: true }).then((cached) => cached ?? fetch(event.request)));
   }
 });

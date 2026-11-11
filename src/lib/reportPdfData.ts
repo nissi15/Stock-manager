@@ -1,5 +1,11 @@
 import type { PaymentMethod, Product, Sale } from './types';
 
+// A rejected offline sale is not on the server, so reports leave it out until it syncs.
+// A sale still waiting to sync is a real sale and stays in.
+export function splitReportSales(sales: Sale[]) {
+  return { counted: sales.filter((sale) => sale.sync !== 'needs_attention'), excluded: sales.filter((sale) => sale.sync === 'needs_attention') };
+}
+
 export function paymentsForSales(sales: Sale[]): Record<PaymentMethod, number> {
   const totals: Record<PaymentMethod, number> = { cash: 0, momo: 0, bank: 0 };
   for (const sale of sales) {

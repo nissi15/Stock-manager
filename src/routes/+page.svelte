@@ -4,10 +4,10 @@
   import { ArrowRight, BarChart3, Box, ChevronRight, Clock3, CreditCard, FileDown, FileText, LockKeyhole, LogOut, MailCheck, Menu, Package, Plus, Search, ShoppingCart, Trash2, TriangleAlert, Wallet, Wifi, WifiOff, X } from '@lucide/svelte';
   import { activities, addExpense, addProduct, addStock, businessDay, closeDay, createSale, expenses, getClosingPreview, initStore, isDemo, loadBatchProfitReport, offlineQueueWarning, online, openDay, products, queueSyncing, recordStockLoss, resetAccountData, retryQueuedSales, sales, stockEntries, stockLosses, refresh, reopenDay, restoreOfflineAccount, syncQueuedSales, updateDailyPrices, updateSale } from '../lib/store';
   import { exportDayClosingPdf, exportReportPdf } from '../lib/pdf';
-  import { paymentsForSales, productsSoldForReport } from '../lib/reportPdfData';
+  import { paymentsForSales, productsSoldForReport, splitReportSales } from '../lib/reportPdfData';
   import { errorMessage as message } from '../lib/errorMessage';
   import WorkspaceSkeleton from '../lib/WorkspaceSkeleton.svelte';
-  import { money, rwf, shortDate, today } from '../lib/format';
+  import { compactMoney, money, rwf, shortDate, today } from '../lib/format';
   import { supabase } from '../lib/supabase';
   import { isStrongPassword, passwordRequirements } from '../lib/password';
   import type { BatchProfit, CartLine, DayClosingSnapshot, Expense, PaymentMethod, Product, Sale, StockEntry, StockLoss, StockLossReason } from '../lib/types';
@@ -130,7 +130,9 @@
   let dayExpenses = $derived($expenses.filter((e) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kigali' }).format(new Date(e.at)) === today()));
   let recentDayExpenses = $derived([...dayExpenses].toSorted((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 8));
   let expenseTotal = $derived(dayExpenses.reduce((sum, e) => sum + e.amount, 0));
-  let reportPeriodSales = $derived($sales.filter((sale) => inDateRange(sale.at, reportFrom, reportTo)));
+  let reportSplit = $derived(splitReportSales($sales.filter((sale) => inDateRange(sale.at, reportFrom, reportTo))));
+  let reportPeriodSales = $derived(reportSplit.counted);
+  let reportExcludedSales = $derived(reportSplit.excluded);
   let reportExpenses = $derived($expenses.filter((expense) => inDateRange(expense.at, reportFrom, reportTo)));
   let reportPeriodStockLosses = $derived($stockLosses.filter((entry) => inDateRange(entry.at, reportFrom, reportTo)));
   let reportProductBatches = $derived(batchProfitRows
@@ -159,7 +161,8 @@
   let reportTrend = $derived(reportSelectedBatch
     ? [{ key: reportSelectedBatch.id, label: 'Selected', detail: batchName(reportSelectedBatch), revenue: reportSelectedBatch.salesRevenue, expenses: reportSelectedBatch.costOfGoods + reportSelectedBatch.stockLossCost, profit: reportSelectedBatch.realizedContribution ?? 0 }]
     : buildTrend(reportSales, reportScopedProductId === 'all' ? reportExpenses : [], reportStockLosses, reportFrom, reportTo));
-  let reportTrendMax = $derived(Math.max(1, ...reportTrend.flatMap((period) => [period.revenue, Math.abs(period.profit)])));
+  let reportTrendMax = $derived(niceCeil(Math.max(1, ...reportTrend.flatMap((period) => [period.revenue, Math.abs(period.profit)]))));
+  let reportTrendHasData = $derived(reportTrend.some((period) => period.revenue !== 0 || period.profit !== 0));
   let reportTrendIsDaily = $derived(reportTrend[0]?.key.length === 10);
   let reportRangeLabel = $derived(formatRange(reportFrom, reportTo));
   let visibleActivities = $derived.by(() => $activities
@@ -180,7 +183,19 @@
     return new Date(b.at).getTime() - new Date(a.at).getTime();
   }));
   let sortedBalances = $derived.by(() => [...balances].sort((a, b) => balanceSort === 'due-high' ? b.due - a.due : a.supplier.localeCompare(b.supplier)));
-  let lowStock = $derived($products.filter((product) => product.active && product.stock < 10));
+  const LOW_STOCK_THRESHOLD = 10;
+  let lowStock = $derived($products.filter((product) => product.active && product.stock > 0 && product.stock < LOW_STOCK_THRESHOLD));
+  let outOfStock = $derived($products.filter((product) => product.active && product.stock <= 0));
+  let restockCount = $derived(lowStock.length + outOfStock.length);
+  let dayClosedToday = $derived($businessDay?.date === today() && $businessDay?.status === 'closed');
+  // Each sale keeps the same number for its business day, whatever filters are applied.
+  let saleNumbers = $derived.by(() => {
+    const numbers = new Map<string, number>();
+    const perDay = new Map<string, number>();
+    const chronological = $sales.map((sale) => ({ id: sale.id, at: new Date(sale.at).getTime(), day: localDate(sale.at) })).sort((a, b) => a.at - b.at || a.id.localeCompare(b.id));
+    for (const sale of chronological) { const next = (perDay.get(sale.day) ?? 0) + 1; perDay.set(sale.day, next); numbers.set(sale.id, next); }
+    return numbers;
+  });
   let selectedSaleIsEditable = $derived(!!selectedSale && selectedSale.sync === 'synced' && dayIsOpen && new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kigali' }).format(new Date(selectedSale.at)) === today());
   let saleDraftTotal = $derived(saleLinesDraft.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0));
   let saleDraftPaid = $derived(salePaymentDraft.cash + salePaymentDraft.momo + salePaymentDraft.bank);
@@ -188,8 +203,9 @@
   let closingPreview = $derived.by(() => closeDayOpen ? getClosingPreview(countedCash) : null);
   let queuedSalesToClose = $derived($sales.filter((sale) => sale.sync !== 'synced' && localDate(sale.at) === $businessDay?.date).length);
   let pendingSyncSales = $derived($sales.filter((sale) => sale.sync !== 'synced'));
-  let syncReviewCount = $derived(pendingSyncSales.filter((sale) => sale.sync === 'needs_attention').length);
-  let queueWarningIsUrgent = $derived(syncReviewCount > 0 || $offlineQueueWarning.includes('older offline records'));
+  let reviewSales = $derived(pendingSyncSales.filter((sale) => sale.sync === 'needs_attention'));
+  let syncReviewCount = $derived(reviewSales.length);
+  let queueWarningIsUrgent = $derived(syncReviewCount > 0 || $offlineQueueWarning.includes('older offline records') || $offlineQueueWarning.includes('Offline storage is unavailable'));
   let closeDayBlocked = $derived(!$online || queuedSalesToClose > 0 || $sales.some((sale) => localDate(sale.at) === $businessDay?.date && sale.hasCostDeficit));
 
   let batchRequest = 0;
@@ -243,8 +259,9 @@
           return;
         }
         try {
-          await refresh();
-          if (accountEpoch === epoch) await syncQueuedSales();
+          // Upload waiting sales before the full reload, so they do not sit unsynced while history loads.
+          await syncQueuedSales();
+          if (accountEpoch === epoch) await refresh();
         } catch (reason) {
           if (accountEpoch === epoch) { online.set(false); error = restored ? `Using saved account data; cloud refresh failed: ${message(reason)}` : message(reason); }
         }
@@ -277,8 +294,14 @@
   $effect(() => {
     if (!success) return;
     const visibleMessage = success;
-    const timer = window.setTimeout(() => { if (success === visibleMessage) success = ''; }, 3000);
+    const timer = window.setTimeout(() => { if (success === visibleMessage) success = ''; }, Math.max(3000, visibleMessage.length * 70));
     return () => window.clearTimeout(timer);
+  });
+  let wasOnline = true;
+  $effect(() => {
+    const nowOnline = $online;
+    if (wasOnline && !nowOnline && authenticated && !isDemo) success = 'Working offline. Sales are saved on this device and sync when you reconnect.';
+    wasOnline = nowOnline;
   });
 
   function selectPage(value: Page) { page = value; error = ''; paymentOpen = false; }
@@ -296,27 +319,62 @@
     const start = new Date(`${from}T12:00:00Z`);
     const end = new Date(`${to}T12:00:00Z`);
     const days = Math.floor((end.getTime() - start.getTime()) / 86400000) + 1;
-    if (days <= 7) return Array.from({ length: days }, (_, index) => {
-      const date = new Date(start);
-      date.setUTCDate(date.getUTCDate() + index);
-      const key = date.toISOString().slice(0, 10);
-      const daySales = records.filter((sale) => localDate(sale.at) === key);
-      const revenue = daySales.reduce((sum, sale) => sum + sale.total, 0);
-      const expenses = daySales.reduce((sum, sale) => sum + sale.cost, 0) + costs.filter((expense) => localDate(expense.at) === key).reduce((sum, expense) => sum + expense.amount, 0) + losses.filter((loss) => localDate(loss.at) === key).reduce((sum, loss) => sum + loss.cost, 0);
-      return { key, label: new Intl.DateTimeFormat('en', { weekday: 'short', timeZone: 'UTC' }).format(date), detail: new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(date), revenue, expenses, profit: revenue - expenses };
-    });
-    const months: { key: string; label: string; detail: string; revenue: number; expenses: number; profit: number }[] = [];
-    const cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1, 12));
-    const finalMonth = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1, 12));
-    while (cursor <= finalMonth) {
-      const key = cursor.toISOString().slice(0, 7);
-      const monthSales = records.filter((sale) => localDate(sale.at).startsWith(key));
-      const revenue = monthSales.reduce((sum, sale) => sum + sale.total, 0);
-      const expenses = monthSales.reduce((sum, sale) => sum + sale.cost, 0) + costs.filter((expense) => localDate(expense.at).startsWith(key)).reduce((sum, expense) => sum + expense.amount, 0) + losses.filter((loss) => localDate(loss.at).startsWith(key)).reduce((sum, loss) => sum + loss.cost, 0);
-      months.push({ key, label: new Intl.DateTimeFormat('en', { month: 'short', timeZone: 'UTC' }).format(cursor), detail: new Intl.DateTimeFormat('en', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(cursor), revenue, expenses, profit: revenue - expenses });
-      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    // One bar group per day up to a month, per week up to a quarter, then per month.
+    const grain = days <= 31 ? 'day' : days <= 92 ? 'week' : 'month';
+    const text = (date: Date, options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en', { ...options, timeZone: 'UTC' }).format(date);
+    const iso = (date: Date) => date.toISOString().slice(0, 10);
+    const buckets: { key: string; from: string; to: string; label: string; detail: string }[] = [];
+    if (grain === 'month') {
+      const cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1, 12));
+      const finalMonth = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1, 12));
+      while (cursor <= finalMonth) {
+        const key = cursor.toISOString().slice(0, 7);
+        buckets.push({ key, from: `${key}-01`, to: `${key}-31`, label: text(cursor, { month: 'short' }), detail: text(cursor, { month: 'long', year: 'numeric' }) });
+        cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+      }
+    } else {
+      const step = grain === 'day' ? 1 : 7;
+      for (const cursor = new Date(start); cursor <= end; cursor.setUTCDate(cursor.getUTCDate() + step)) {
+        const first = new Date(cursor);
+        const last = new Date(cursor);
+        last.setUTCDate(last.getUTCDate() + step - 1);
+        if (last > end) last.setTime(end.getTime());
+        const monthDay = text(first, { month: 'short', day: 'numeric' });
+        if (grain === 'week') buckets.push({ key: `w${iso(first)}`, from: iso(first), to: iso(last), label: monthDay, detail: iso(first) === iso(last) ? monthDay : `${monthDay} – ${text(last, { month: 'short', day: 'numeric' })}` });
+        else buckets.push({ key: iso(first), from: iso(first), to: iso(first), label: days <= 7 ? text(first, { weekday: 'short' }) : buckets.length === 0 || first.getUTCDate() === 1 ? monthDay : String(first.getUTCDate()), detail: days <= 7 ? monthDay : text(first, { weekday: 'short', month: 'short', day: 'numeric' }) });
+      }
     }
-    return months;
+    const entries = [
+      ...records.map((sale) => ({ date: localDate(sale.at), revenue: sale.total, expenses: sale.cost })),
+      ...costs.map((expense) => ({ date: localDate(expense.at), revenue: 0, expenses: expense.amount })),
+      ...losses.map((loss) => ({ date: localDate(loss.at), revenue: 0, expenses: loss.cost }))
+    ];
+    return buckets.map((bucket) => {
+      let revenue = 0;
+      let expenses = 0;
+      for (const entry of entries) if (entry.date >= bucket.from && entry.date <= bucket.to) { revenue += entry.revenue; expenses += entry.expenses; }
+      return { key: bucket.key, label: bucket.label, detail: bucket.detail, revenue, expenses, profit: revenue - expenses };
+    });
+  }
+  function niceCeil(value: number) {
+    const power = 10 ** Math.floor(Math.log10(value));
+    const scaled = value / power;
+    // Steps whose quarters are round numbers, so the axis is not twice as tall as the data.
+    return ([1, 1.2, 1.6, 2, 2.4, 3.2, 4, 6, 8, 10].find((step) => scaled <= step) ?? 10) * power;
+  }
+  function showRestock() { selectPage('inventory'); inventoryTab = 'products'; productSort = 'stock-low'; }
+  function saleTime(sale: Sale) { return salesFrom && salesFrom === salesTo ? new Intl.DateTimeFormat('en', { timeStyle: 'short', timeZone: 'Africa/Kigali' }).format(new Date(sale.at)) : shortDate(sale.at); }
+  // The server's wording repeats "offline sale needs review"; the badge already says that.
+  function syncReason(sale: Sale) { return (sale.syncError ?? '').replace(/;?\s*offline sale needs review\.?$/i, '').trim() || 'The server did not accept this sale'; }
+  function syncFixHint(sale: Sale) {
+    const reason = sale.syncError ?? '';
+    if (/not enough stock/i.test(reason)) return 'Receive the missing stock in Inventory, then retry.';
+    if (/closed/i.test(reason)) return 'Reopen that business day, then retry.';
+    return 'Fix the cause, then retry.';
+  }
+  function saleProductSummary(sale: Sale) {
+    const names = [...new Set(sale.lines.map((line) => line.name))];
+    return names.length > 2 ? `${names.slice(0, 2).join(', ')} +${names.length - 2} more` : names.join(', ') || 'No products';
   }
   function setReportRange(days: number) { reportTo = today(); reportFrom = dateOffset(reportTo, 1 - days); }
   function addToCart(product: Product) {
@@ -424,9 +482,8 @@
   async function submitDamage() { try { working = true; error = ''; await recordStockLoss(damageForm); damageDrawer = false; success = `Stock loss recorded · ${rwf(damageEstimate.cost)}`; damageForm = { productId: '', quantity: 1, reason: 'Damaged', note: '' }; } catch (e) { error = message(e); } finally { working = false; } }
   function showSale(sale: Sale) { selectedSale = sale; editingSale = false; saleLinesDraft = sale.lines.map(({ productId, quantity, unitPrice }) => ({ productId, quantity, unitPrice })); salePaymentDraft = { cash: 0, momo: 0, bank: 0 }; for (const payment of sale.payments) salePaymentDraft[payment.method] += payment.amount; }
   function clientLabel(sale: Sale) {
-    const chronological = [...visibleSales].toSorted((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime() || a.id.localeCompare(b.id));
-    const index = chronological.findIndex((entry) => entry.id === sale.id);
-    return index >= 0 ? `Client ${index + 1}` : 'Client';
+    const number = saleNumbers.get(sale.id);
+    return number ? `Client ${number}` : 'Client';
   }
   async function saveSaleEdit() {
     if (!selectedSale) return;
@@ -462,7 +519,7 @@
   function batchName(batch: Pick<BatchProfit, 'productName' | 'at'>) { return `${batch.productName} · ${new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Kigali' }).format(new Date(batch.at))} delivery`; }
   function stockCategoryFor(entry: StockEntry) { return $products.find((product) => product.id === entry.productId)?.category ?? '—'; }
   function estimateStockLoss(productId: string, quantity: number) { let needed = Math.max(0, Math.round(quantity || 0)); let cost = 0; for (const batch of $stockEntries.filter((entry) => entry.productId === productId && entry.remaining > 0).toSorted((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime() || a.id.localeCompare(b.id))) { const used = Math.min(needed, batch.remaining); cost += used * batch.unitCost; needed -= used; if (!needed) break; } return { cost, missing: needed }; }
-  function exportCsv() { const rows = [['Date', 'Client', 'Total RWF', 'Cost RWF', 'Profit RWF', 'Payments'], ...visibleSales.map((s) => [s.at, clientLabel(s), s.total, s.cost, s.total - s.cost, s.payments.map((p) => `${p.method}:${p.amount}`).join(' | ')])]; const csv = rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(',')).join('\n'); const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); const a = document.createElement('a'); a.href = url; a.download = `sales-${salesFrom || 'start'}-to-${salesTo || 'latest'}.csv`; a.click(); URL.revokeObjectURL(url); }
+  function exportCsv() { const rows = [['Date', 'Client', 'Products', 'Total RWF', 'Cost RWF', 'Profit RWF', 'Payments'], ...visibleSales.map((s) => [s.at, clientLabel(s), s.lines.map((line) => `${line.quantity} x ${line.name}`).join(' | '), s.total, s.cost, s.total - s.cost, s.payments.map((p) => `${p.method}:${p.amount}`).join(' | ')])]; const csv = rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(',')).join('\n'); const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); const a = document.createElement('a'); a.href = url; a.download = `sales-${salesFrom || 'start'}-to-${salesTo || 'latest'}.csv`; a.click(); URL.revokeObjectURL(url); }
   function pointerDown(event: PointerEvent) { if (!canConfirm) return; dragging = true; sliderElement.setPointerCapture(event.pointerId); pointerMove(event); }
   function pointerMove(event: PointerEvent) { if (!dragging) return; const rect = sliderElement.getBoundingClientRect(); dragProgress = Math.max(0, Math.min(1, (event.clientX - rect.left - 27) / (rect.width - 54))); }
   function pointerUp() { if (!dragging) return; dragging = false; if (dragProgress > 0.88) { dragProgress = 1; void finishSale(); } else dragProgress = 0; }
@@ -508,12 +565,11 @@
   </main>
 {:else}
   <div class="app-shell"><aside class:expanded={railOpen} class="rail"><div class="rail-header"><button class="rail-brand" title="Toggle menu" aria-label="Toggle menu" onclick={() => railOpen = !railOpen}><Box size={22} /></button><span class="brand-name">Stock Manager</span></div><span class="rail-caption">WORKSPACE</span><nav aria-label="Main navigation"><button class:active={page === 'sale'} title="New sale" onclick={() => selectPage('sale')}><ShoppingCart size={20} /><span>New sale</span></button><button class:active={page === 'sales'} title="Sales" onclick={() => selectPage('sales')}><FileText size={20} /><span>Sales</span></button><button class:active={page === 'inventory'} title="Inventory" onclick={() => selectPage('inventory')}><Package size={20} /><span>Inventory</span></button><button class:active={page === 'expenses'} title="Expenses" onclick={() => selectPage('expenses')}><CreditCard size={20} /><span>Expenses</span></button><button class:active={page === 'reports'} title="Reports" onclick={() => selectPage('reports')}><BarChart3 size={20} /><span>Reports</span></button><button class:active={page === 'activity'} title="Activity" onclick={() => selectPage('activity')}><Clock3 size={20} /><span>Activity</span></button></nav><div class="rail-footer"><button class="rail-bottom" title="Toggle menu" aria-label="Toggle menu" onclick={() => railOpen = !railOpen}><Menu size={19} /><span>Collapse menu</span></button><button class="signout-button" title="Log out" aria-label="Log out" disabled={working} onclick={signOut}><span class="account-avatar"><LogOut size={17} /></span><span class="account-details"><strong>Log out</strong><small>{isDemo ? 'Demo workspace' : accountEmail}</small></span></button></div></aside>
-    <main class="workspace"><header class="topbar"><div class="page-heading"><span class="eyebrow">{page === 'sale' ? 'POINT OF SALE' : 'WORKSPACE'} · {today()}</span><h1>{page === 'sale' ? 'New sale' : page === 'sales' ? 'Sales' : page === 'inventory' ? 'Inventory' : page === 'expenses' ? 'Expenses' : page === 'reports' ? 'Reports' : 'Activity'}</h1></div><div class="status">{#if dayIsOpen}<button class="daily-prices-button" onclick={startDay}>Daily prices</button>{:else if $businessDay?.date === today() && $businessDay.status === 'closed' && ($businessDay.closing || closingSnapshot)}<button class="daily-prices-button" disabled={working} onclick={downloadClosingPdf}><FileDown size={15} /> Closing PDF</button>{/if}<button class="status-button" onclick={dayIsOpen || previousDayOpen ? openCloseDay : startDay}><i class:off={!dayIsOpen}></i>{dayIsOpen ? 'Day open' : previousDayOpen ? `Close ${$businessDay?.date}` : $businessDay?.date === today() && $businessDay.status === 'closed' ? 'Day closed' : 'Start day'}</button><span class="status-divider"></span><span class:offline={!$online} class="connection-status" role="status">{#if $online}<Wifi size={17} aria-hidden="true" />{:else}<WifiOff size={17} aria-hidden="true" />{/if}{$online ? 'Connected' : 'Offline'}</span>{#if isDemo}<span class="demo-pill">Demo mode</span>{/if}</div></header>
-    {#if error}<div class="banner danger" role="alert">{error}<button aria-label="Dismiss" onclick={() => error = ''}><X size={17} /></button></div>{/if}{#if success}<div class="banner success" role="status">{success}<button aria-label="Dismiss" onclick={() => success = ''}><X size={17} /></button></div>{/if}
-    {#if !$online && !isDemo}<div class="banner connection-banner" role="status"><WifiOff size={20} aria-hidden="true" /><span><strong>Working offline</strong><small>Sales are saved on this device and will sync when connected. Stock and reports from other computers will update after reconnecting.</small></span></div>{/if}
-    {#if $offlineQueueWarning && ($online || queueWarningIsUrgent)}<div class:danger={queueWarningIsUrgent} class:connection-banner={!queueWarningIsUrgent} class="banner" role={queueWarningIsUrgent ? 'alert' : 'status'}>{#if queueWarningIsUrgent}<TriangleAlert size={19} aria-hidden="true" />{:else}<WifiOff size={19} aria-hidden="true" />{/if}<span>{$offlineQueueWarning}</span><button aria-label="Open sales to review offline queue" onclick={() => selectPage('sales')}>Review sales</button></div>{/if}
+    <main class:sale-page={page === 'sale'} class="workspace"><header class="topbar"><div class="page-heading"><span class="eyebrow">{page === 'sale' ? 'POINT OF SALE' : 'WORKSPACE'} · {today()}</span><h1>{page === 'sale' ? 'New sale' : page === 'sales' ? 'Sales' : page === 'inventory' ? 'Inventory' : page === 'expenses' ? 'Expenses' : page === 'reports' ? 'Reports' : 'Activity'}</h1></div><div class="status">{#if dayIsOpen}<button class="daily-prices-button" onclick={startDay}>Daily prices</button>{:else if $businessDay?.date === today() && $businessDay.status === 'closed' && ($businessDay.closing || closingSnapshot)}<button class="daily-prices-button" disabled={working} onclick={downloadClosingPdf}><FileDown size={15} /> Closing PDF</button>{/if}<span class="day-chip" role="status"><i class:off={!dayIsOpen}></i>{dayIsOpen ? 'Day open' : previousDayOpen ? `${$businessDay?.date} still open` : dayClosedToday ? 'Day closed' : 'Day not started'}</span><button class="status-button" onclick={dayIsOpen || previousDayOpen ? openCloseDay : startDay}>{dayIsOpen ? 'Close day' : previousDayOpen ? `Close ${$businessDay?.date}` : dayClosedToday ? 'Reopen day' : 'Start day'}</button><span class="status-divider"></span><span class:offline={!$online} class="connection-status" role="status" aria-label={$online ? 'Connected' : 'Offline'} title={$online ? 'Connected' : 'Sales are saved on this device and will sync when connected. Stock and reports from other computers will update after reconnecting.'}>{#if $online}<Wifi size={17} aria-hidden="true" />{:else}<WifiOff size={17} aria-hidden="true" />{/if}<span class="connection-label">{$online ? 'Connected' : 'Offline'}{#if !$online && !isDemo}<span class="connection-detail"> · saving on this device</span>{/if}</span></span>{#if pendingSyncSales.length || $offlineQueueWarning}<button class:danger={queueWarningIsUrgent} class="sync-chip" title={$offlineQueueWarning || 'Saved on this device. Sync starts automatically when the connection returns.'} onclick={() => selectPage('sales')}>{#if queueWarningIsUrgent}<TriangleAlert size={15} aria-hidden="true" />{/if}{syncReviewCount > 0 ? `${syncReviewCount} ${syncReviewCount === 1 ? 'needs' : 'need'} review` : pendingSyncSales.length ? `${pendingSyncSales.length} to sync` : 'Sync notice'}</button>{/if}{#if isDemo}<span class="demo-pill">Demo mode</span>{/if}</div></header>
+    <div class="toast-stack">{#if error}<div class="toast danger" role="alert"><TriangleAlert size={17} aria-hidden="true" /><span>{error}</span><button aria-label="Dismiss" onclick={() => error = ''}><X size={17} /></button></div>{/if}{#if success}<div class="toast" role="status"><span>{success}</span><button aria-label="Dismiss" onclick={() => success = ''}><X size={17} /></button></div>{/if}</div>
+    {#if $offlineQueueWarning && queueWarningIsUrgent && !(page === 'sales' && syncReviewCount > 0)}<div class:danger={queueWarningIsUrgent} class:connection-banner={!queueWarningIsUrgent} class="banner queue-banner" role={queueWarningIsUrgent ? 'alert' : 'status'}>{#if queueWarningIsUrgent}<TriangleAlert size={19} aria-hidden="true" />{:else}<WifiOff size={19} aria-hidden="true" />{/if}<span>{syncReviewCount > 0 ? `${syncReviewCount} offline ${syncReviewCount === 1 ? 'sale was' : 'sales were'} not recorded and ${syncReviewCount === 1 ? 'needs' : 'need'} review.` : $offlineQueueWarning}</span><button aria-label="Open sales to review offline queue" onclick={() => selectPage('sales')}>Review sales</button></div>{/if}
     {#if page === 'sale'}
-      <div class:payment-visible={paymentOpen} class="sale-layout"><section class="panel products-panel"><div class="panel-heading"><div><h2>Products</h2><p>Select an item to add it to this sale.</p></div><span class="count-pill">{$products.length} items</span></div><div class="search-wrap"><Search size={20} /><input bind:this={searchInput} bind:value={search} placeholder="Search products" aria-label="Search products" /></div>{#if $products.length > 0}<div class="product-head"><span>Product</span><span>Stock</span><span>Today’s price (RWF)</span></div>{/if}<div class="product-list">{#each activeProducts as product}<button class="product-row" onclick={() => addToCart(product)}><span class="product-name"><strong>{product.name}</strong><small>{product.category} · {product.unit}</small></span><span>{money(Math.max(0, product.stock))}</span><span>{money(product.price)}</span><ChevronRight size={18} /></button>{:else}{#if $products.length === 0}<div class="onboarding-empty"><span class="empty-icon"><Package size={27} strokeWidth={1.6} /></span><h3>Your catalog starts here</h3><p>Add a product like Bismati rice, then receive stock before your first sale.</p><button class="secondary" onclick={() => productDrawer = true}><Plus size={17} /> Add first product</button></div>{:else}<div class="empty">No products match your search.</div>{/if}{/each}</div></section>
+      <div class:payment-visible={paymentOpen} class="sale-layout"><section class="panel products-panel"><div class="panel-heading"><div><h2>Products</h2><p>Select an item to add it to this sale.</p></div><div class="panel-pills">{#if restockCount}<button class="count-pill restock-pill" title={`${outOfStock.length} out of stock, ${lowStock.length} below ${LOW_STOCK_THRESHOLD} left. Open inventory.`} onclick={showRestock}><TriangleAlert size={13} aria-hidden="true" />{restockCount} to restock</button>{/if}<span class="count-pill">{$products.length} items</span></div></div><div class="search-wrap"><Search size={20} /><input bind:this={searchInput} bind:value={search} placeholder="Search products" aria-label="Search products" /></div>{#if $products.length > 0}<div class="product-head"><span>Product</span><span>Stock</span><span>Today’s price (RWF)</span></div>{/if}<div class="product-list">{#each activeProducts as product}<button class:out-of-stock={product.stock <= 0} class="product-row" disabled={product.stock <= 0} onclick={() => addToCart(product)}><span class="product-name"><strong>{product.name}</strong><small>{product.category} · {product.unit}</small></span><span>{#if product.stock <= 0}<span class="stock-out">Out of stock</span>{:else}<span class:stock-low={product.stock < LOW_STOCK_THRESHOLD}>{money(product.stock)}</span>{/if}</span><span>{money(product.price)}</span><ChevronRight size={18} /></button>{:else}{#if $products.length === 0}<div class="onboarding-empty"><span class="empty-icon"><Package size={27} strokeWidth={1.6} /></span><h3>Your catalog starts here</h3><p>Add a product like Bismati rice, then receive stock before your first sale.</p><button class="secondary" onclick={() => productDrawer = true}><Plus size={17} /> Add first product</button></div>{:else}<div class="empty">No products match your search.</div>{/if}{/each}</div></section>
       <section class="panel cart-panel"><h2>Current sale</h2><div class="cart-head"><span>Item</span><span>Qty</span><span>Unit price (RWF)</span><span>Subtotal (RWF)</span></div><div class="cart-lines">{#each cart as line}{@const cartProduct = $products.find((product) => product.id === line.productId)}{@const stockIssue = line.quantity > (cartProduct?.stock ?? 0)}<div class:stock-invalid={stockIssue} class="cart-row"><div class="product-name"><strong>{cartProduct?.name}</strong><small>{cartProduct?.category} · {cartProduct?.unit}</small></div><div class="quantity-cell"><input class:invalid={stockIssue} class="qty-input" data-qty={line.productId} type="number" min="1" step="1" value={line.quantity} onchange={(e) => updateLine(line.productId, 'quantity', e.currentTarget.value)} onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); updateLine(line.productId, 'quantity', e.currentTarget.value); searchInput?.focus(); } }} aria-label="Quantity" />{#if stockIssue}<small class="stock-warning">{(cartProduct?.stock ?? 0) <= 0 ? 'Out of stock' : `Only ${cartProduct?.stock} available`}</small>{/if}</div><div class="price-cell"><input type="text" inputmode="numeric" value={money(line.unitPrice)} oninput={(e) => updateLine(line.productId, 'unitPrice', String(readMoneyInput(e.currentTarget)))} aria-label="Unit price" /><small>Today’s price: {rwf(cartProduct?.price ?? 0)}</small></div><strong class="subtotal">{money(line.quantity * line.unitPrice)}</strong><button class="icon-button" aria-label="Remove item" onclick={() => removeLine(line.productId)}><Trash2 size={20} /></button></div>{:else}<div class="cart-empty">Choose a product to start a sale.</div>{/each}</div><div class="cart-bottom"><div class="total-line"><strong>Total</strong><strong>{rwf(total)}</strong></div>{#if !paymentOpen}<button class="primary end-sale" disabled={!cart.length || hasStockIssue} onclick={openPaymentPanel}>End sale <ArrowRight size={26} /></button>{/if}</div></section>
       {#if paymentOpen}
         <section class="panel payment-panel">
@@ -560,7 +616,7 @@
           </label></div>
         {/if}
         {#if inventoryTab === 'products'}
-          <div class="table-wrap"><table><thead><tr><th>Product</th><th>Category</th><th>Unit</th><th>In stock</th><th>Today’s price</th><th>Status</th></tr></thead><tbody>{#each sortedProducts as product}<tr><td class="strong">{product.name}</td><td>{product.category}</td><td>{product.unit}</td><td class="stock-figure">{money(product.stock)}</td><td class="price-figure">{rwf(product.price)}</td><td><span class:danger={product.stock <= 0} class:warning={product.stock > 0 && product.stock < 10} class="badge">{product.stock <= 0 ? 'Out of stock' : product.stock < 10 ? 'Low stock' : 'Active'}</span></td></tr>{/each}</tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th>Product</th><th>Category</th><th>Unit</th><th>In stock</th><th>Today’s price</th><th>Status</th></tr></thead><tbody>{#each sortedProducts as product}<tr><td class="strong">{product.name}</td><td>{product.category}</td><td>{product.unit}</td><td class="stock-figure">{money(product.stock)}</td><td class="price-figure">{rwf(product.price)}</td><td><span class:danger={product.stock <= 0} class:warning={product.stock > 0 && product.stock < LOW_STOCK_THRESHOLD} class="badge">{product.stock <= 0 ? 'Out of stock' : product.stock < LOW_STOCK_THRESHOLD ? 'Low stock' : 'Active'}</span></td></tr>{/each}</tbody></table></div>
         {:else if inventoryTab === 'history'}
           <div class="table-wrap"><table><thead><tr><th>Product</th><th>Batch</th><th>Date added</th><th>Category</th><th>Quantity</th><th>Unit cost</th><th>Supplier</th><th>Paid</th></tr></thead><tbody>{#each sortedStockEntries as entry}<tr><td class="strong">{entry.productName}</td><td><span class="batch-reference" title={batchReference(entry)} aria-label={`Batch ${batchReference(entry)}`}>#{batchReference(entry).split('-').at(-1)}</span></td><td>{shortDate(entry.at)}</td><td>{stockCategoryFor(entry)}</td><td class="numeric-strong">+{entry.quantity}</td><td class="numeric-strong">{rwf(entry.unitCost)}</td><td>{entry.supplier || '—'}</td><td class="numeric-strong">{rwf(entry.paid)}</td></tr>{:else}<tr><td colspan="8" class="empty-cell">No deliveries recorded yet.</td></tr>{/each}</tbody></table></div>
         {:else}
@@ -569,19 +625,29 @@
       </div>
     {:else if page === 'sales'}
       <div class="page-card"><div class="section-heading"><div><h2>Sales history</h2><p>Choose a date range, then narrow it by category or payment method.</p></div><button class="secondary" onclick={exportCsv}>Export CSV</button></div>
-        {#if pendingSyncSales.length}
-          <div class:attention={syncReviewCount > 0} class="queue-review" role="status">
+        {#if syncReviewCount > 0}
+          <section class="sync-review" aria-label="Sales that need review">
+            <header class="sync-review-head">
+              <span class="sync-review-icon"><TriangleAlert size={18} aria-hidden="true" /></span>
+              <div><strong>{syncReviewCount} {syncReviewCount === 1 ? 'sale was' : 'sales were'} not recorded</strong><small>Made offline, then rejected when this device reconnected. Saved on this device only: other computers and the day closing do not include {syncReviewCount === 1 ? 'it' : 'them'} yet.</small></div>
+              {#if $online}<button class="secondary" disabled={$queueSyncing} onclick={() => void retryQueuedSales()}>{$queueSyncing ? 'Retrying…' : 'Retry sync'}</button>{:else}<span class="queue-auto-sync">Retry when connected</span>{/if}
+            </header>
+            <ul class="sync-review-list">{#each reviewSales as sale}<li><div class="sync-review-sale"><strong>{clientLabel(sale)} · {rwf(sale.total)}</strong><small>{shortDate(sale.at)} · {saleProductSummary(sale)}</small></div><div class="sync-review-reason"><strong>{syncReason(sale)}</strong><small>{syncFixHint(sale)}</small></div><button class="sale-link" onclick={() => showSale(sale)}>View sale <ChevronRight size={15} /></button></li>{/each}</ul>
+            {#if pendingSyncSales.length > syncReviewCount}<p class="sync-review-foot">{pendingSyncSales.length - syncReviewCount} more {pendingSyncSales.length - syncReviewCount === 1 ? 'sale is' : 'sales are'} waiting behind {syncReviewCount === 1 ? 'this one' : 'these'} and will sync after it is resolved.</p>{/if}
+          </section>
+        {:else if pendingSyncSales.length}
+          <div class="queue-review" role="status">
             <div class="queue-review-copy">
-              {#if syncReviewCount > 0}<TriangleAlert size={20} aria-hidden="true" />{:else}<WifiOff size={20} aria-hidden="true" />{/if}
+              <WifiOff size={20} aria-hidden="true" />
               <span>
-                <strong>{syncReviewCount > 0 ? `${syncReviewCount} ${syncReviewCount === 1 ? 'sale needs' : 'sales need'} review` : `${pendingSyncSales.length} ${pendingSyncSales.length === 1 ? 'sale' : 'sales'} waiting to sync`}</strong>
-                <small>{syncReviewCount > 0 ? 'Review the issue before closing the day. Keep browser data until it is resolved.' : 'Saved on this device. Sync starts automatically when the connection returns.'}</small>
+                <strong>{pendingSyncSales.length} {pendingSyncSales.length === 1 ? 'sale' : 'sales'} waiting to sync</strong>
+                <small>Saved on this device. Sync starts automatically when the connection returns.</small>
               </span>
             </div>
-            {#if $online}<button class="secondary" disabled={$queueSyncing} onclick={() => void retryQueuedSales()}>{$queueSyncing ? 'Syncing…' : 'Retry sync'}</button>{:else}<span class="queue-auto-sync">Syncs when connected</span>{/if}
+            {#if $online}<button class="secondary" disabled={$queueSyncing} onclick={() => void retryQueuedSales()}>{$queueSyncing ? 'Syncing…' : 'Sync now'}</button>{:else}<span class="queue-auto-sync">Syncs when connected</span>{/if}
           </div>
         {/if}
-        <div class="sales-filters range-filters"><label><span>From</span><input type="date" max={salesTo || undefined} bind:value={salesFrom} /></label><label><span>To</span><input type="date" min={salesFrom || undefined} bind:value={salesTo} /></label><label><span>Category</span><select bind:value={salesCategory}><option value="all">All categories</option>{#each productCategories as category}<option value={category}>{category}</option>{/each}</select></label><label><span>Payment</span><select bind:value={salesPayment}><option value="all">All payments</option><option value="cash">Cash</option><option value="momo">MoMo</option><option value="bank">Bank</option></select></label><label><span>Sort</span><select bind:value={salesOrder}><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label><button class="filter-reset" onclick={() => { salesFrom = today(); salesTo = today(); salesCategory = 'all'; salesPayment = 'all'; salesOrder = 'newest'; }}>Today</button></div><div class="results-count">{visibleSales.length} {visibleSales.length === 1 ? 'sale' : 'sales'} shown</div><div class="table-wrap"><table><thead><tr><th>Client</th><th>Products</th><th>Payment</th><th>Total</th><th>Sync</th></tr></thead><tbody>{#each visibleSales as sale}{@const itemCount = sale.lines.reduce((sum, line) => sum + line.quantity, 0)}<tr><td><button class="sale-link client-link" title="Open sale details" onclick={() => showSale(sale)}>{clientLabel(sale)}</button></td><td><button class="sale-products-link" title="View all products in this sale" onclick={() => showSale(sale)}><strong>{itemCount} {itemCount === 1 ? 'item' : 'items'} sold</strong><ChevronRight size={16} /></button></td><td>{sale.payments.map((p) => p.method === 'momo' ? 'MoMo' : p.method).join(' + ')}</td><td class="sale-total">{rwf(sale.total)}</td><td><span class:warning={sale.sync === 'queued'} class:danger={sale.sync === 'needs_attention'} class="badge" title={sale.syncError || undefined}>{sale.sync === 'needs_attention' ? 'Needs review' : sale.sync === 'queued' ? 'Queued' : 'Synced'}</span>{#if sale.syncError}<small class="sale-sync-error">{sale.syncError}</small>{/if}</td></tr>{:else}<tr><td colspan="5" class="empty-cell">No sales match this date range and filters.</td></tr>{/each}</tbody></table></div></div>
+        <div class="sales-filters range-filters"><label><span>From</span><input type="date" max={salesTo || undefined} bind:value={salesFrom} /></label><label><span>To</span><input type="date" min={salesFrom || undefined} bind:value={salesTo} /></label><label><span>Category</span><select bind:value={salesCategory}><option value="all">All categories</option>{#each productCategories as category}<option value={category}>{category}</option>{/each}</select></label><label><span>Payment</span><select bind:value={salesPayment}><option value="all">All payments</option><option value="cash">Cash</option><option value="momo">MoMo</option><option value="bank">Bank</option></select></label><label><span>Sort</span><select bind:value={salesOrder}><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label><button class="filter-reset" onclick={() => { salesFrom = today(); salesTo = today(); salesCategory = 'all'; salesPayment = 'all'; salesOrder = 'newest'; }}>Today</button></div><div class="results-count">{visibleSales.length} {visibleSales.length === 1 ? 'sale' : 'sales'} shown</div><div class="table-wrap"><table><thead><tr><th>Client</th><th>Time</th><th>Products</th><th>Payment</th><th>Total</th><th>Sync</th></tr></thead><tbody>{#each visibleSales as sale}{@const itemCount = sale.lines.reduce((sum, line) => sum + line.quantity, 0)}<tr><td><button class="sale-link client-link" title="Open sale details" onclick={() => showSale(sale)}>{clientLabel(sale)}</button></td><td class="sale-time">{saleTime(sale)}</td><td><button class="sale-products-link" title="View all products in this sale" onclick={() => showSale(sale)}><span class="sale-products-text"><strong>{saleProductSummary(sale)}</strong><small>{itemCount} {itemCount === 1 ? 'unit' : 'units'} sold</small></span><ChevronRight size={16} /></button></td><td>{sale.payments.map((p) => p.method === 'momo' ? 'MoMo' : p.method).join(' + ')}</td><td class="sale-total">{rwf(sale.total)}</td><td><span class:warning={sale.sync === 'queued'} class:danger={sale.sync === 'needs_attention'} class="badge" title={sale.sync === 'queued' ? 'Saved on this device. It syncs when connected.' : undefined}>{sale.sync === 'needs_attention' ? 'Needs review' : sale.sync === 'queued' ? 'Waiting to sync' : 'Synced'}</span>{#if sale.sync === 'needs_attention'}<small class="sale-sync-error">{syncReason(sale)}</small>{/if}</td></tr>{:else}<tr><td colspan="6" class="empty-cell">No sales match this date range and filters.</td></tr>{/each}</tbody></table></div></div>
     {:else if page === 'expenses'}
       <div class="content-grid expense-simple-grid">
         <section class="page-card"><div class="section-heading"><div><h2>Record expense</h2><p>Add today’s operating cost and keep moving.</p></div></div><form class="form-grid" onsubmit={(e) => { e.preventDefault(); void submitExpense(); }}><label>Category<select bind:value={expenseForm.category}><option>Transport</option><option>Wages</option><option>Utilities</option><option>Rent</option><option>Packaging</option><option>Repairs</option><option>Tax</option><option>Other</option></select></label><label>Amount (RWF)<input type="text" inputmode="numeric" value={money(expenseForm.amount)} oninput={(e) => expenseForm.amount = readMoneyInput(e.currentTarget)} required /></label><label class="wide">Description<input bind:value={expenseForm.description} placeholder="What was this for?" /></label><label>Payment account<select bind:value={expenseForm.method}><option value="cash">Cash</option><option value="momo">MoMo</option><option value="bank">Bank</option></select></label><button class="primary compact" disabled={working}>Save expense <ArrowRight size={18} /></button></form></section>
@@ -604,6 +670,7 @@
             <div class="range-presets"><button class="secondary" onclick={() => setReportRange(1)}>Today</button><button class="secondary" onclick={() => setReportRange(7)}>7 days</button><button class="secondary" onclick={() => setReportRange(30)}>30 days</button></div>
           </div>
           {#if batchReportError}<div class="report-filter-error">Stock delivery filtering is unavailable: {batchReportError}</div>{/if}
+          {#if reportExcludedSales.length}<div class="report-excluded" role="status"><TriangleAlert size={15} aria-hidden="true" /><span>{reportExcludedSales.length} rejected offline {reportExcludedSales.length === 1 ? 'sale' : 'sales'} ({rwf(reportExcludedSales.reduce((sum, sale) => sum + sale.total, 0))}) {reportExcludedSales.length === 1 ? 'is' : 'are'} not counted here until {reportExcludedSales.length === 1 ? 'it syncs' : 'they sync'}.</span><button class="sale-link" onclick={() => page = 'sales'}>Review</button></div>{/if}
         </section>
         {#if reportTab === 'revenue'}
           <div class="report-summary-grid">
@@ -615,8 +682,8 @@
             <div class="metric tone-green-strong"><span>{reportScopedProductId === 'all' ? 'Net profit' : 'Realized result'}</span><strong>{profitVerified ? rwf(reportProfit) : 'Pending cost'}</strong><small>{reportScopedProductId === 'all' ? 'Gross profit − expenses − stock loss' : 'Gross profit − stock loss'}</small></div>
           </div>
           <section class="page-card report-trend-card">
-            <div class="section-heading financial-trend-head"><div><h2>{reportSelectedBatch ? 'Stock delivery result' : 'Revenue and profit'}</h2><p>{reportSelectedBatch ? batchName(reportSelectedBatch) : reportTrendIsDaily ? 'Each bar group is one day in the selected week.' : 'Longer periods are grouped by month for a clearer comparison.'}</p></div><div class="trend-legend"><span><i class="revenue-dot"></i>Revenue</span><span><i class="profit-dot"></i>Profit</span></div></div>
-            <div class="financial-trend" style={`grid-template-columns:repeat(${Math.max(1, reportTrend.length)},minmax(74px,1fr))`} aria-label="Revenue and profit in the selected date range">{#each reportTrend as period}<button type="button" class="financial-period" aria-label={`${period.detail}: revenue ${rwf(period.revenue)}, profit ${rwf(period.profit)}`}><span class="trend-tooltip" role="tooltip"><strong>{period.detail}</strong><span><i class="revenue-dot"></i><em>revenue</em><b>{rwf(period.revenue)}</b></span><span><i class="profit-dot"></i><em>profit</em><b class:danger-text={period.profit < 0}>{rwf(period.profit)}</b></span></span><span class="financial-bars"><i class="financial-bar revenue-bar" style={`height:${period.revenue > 0 ? Math.max(8, period.revenue / reportTrendMax * 100) : 0}%`}></i><i class:negative-bar={period.profit < 0} class="financial-bar profit-bar" style={`height:${period.profit !== 0 ? Math.max(8, Math.abs(period.profit) / reportTrendMax * 100) : 0}%`}></i></span><span class="financial-period-label">{period.label}</span></button>{/each}</div>
+            <div class="section-heading financial-trend-head"><div><h2>{reportSelectedBatch ? 'Stock delivery result' : 'Revenue and profit'}</h2><p>{reportSelectedBatch ? batchName(reportSelectedBatch) : reportTrendIsDaily ? 'Each bar group is one day.' : reportTrend[0]?.key.startsWith('w') ? 'Each bar group is one week.' : 'Each bar group is one month.'}</p></div><div class="trend-legend"><span><i class="revenue-dot"></i>Revenue</span><span><i class="profit-dot"></i>Profit</span></div></div>
+            <div class:dense={reportTrend.length > 10} class="financial-trend" style={`grid-template-columns:48px repeat(${Math.max(1, reportTrend.length)},minmax(${reportTrend.length > 20 ? 16 : reportTrend.length > 10 ? 26 : 74}px,1fr))`} aria-label="Revenue and profit in the selected date range"><div class="trend-axis" aria-hidden="true">{#if reportTrendHasData}{#each [1, 0.75, 0.5, 0.25, 0] as tick}<span style={`bottom:${35 + tick * 210}px`}>{compactMoney(reportTrendMax * tick)}</span>{/each}{/if}</div>{#each reportTrend as period}<button type="button" class="financial-period" aria-label={`${period.detail}: revenue ${rwf(period.revenue)}, profit ${rwf(period.profit)}`}><span class="trend-tooltip" role="tooltip"><strong>{period.detail}</strong><span><i class="revenue-dot"></i><em>revenue</em><b>{rwf(period.revenue)}</b></span><span><i class="profit-dot"></i><em>profit</em><b class:danger-text={period.profit < 0}>{rwf(period.profit)}</b></span></span><span class="financial-bars"><i class="financial-bar revenue-bar" style={`height:${period.revenue > 0 ? Math.max(2, period.revenue / reportTrendMax * 100) : 0}%`}></i><i class:negative-bar={period.profit < 0} class="financial-bar profit-bar" style={`height:${period.profit !== 0 ? Math.max(2, Math.abs(period.profit) / reportTrendMax * 100) : 0}%`}></i></span><span class="financial-period-label">{period.label}</span></button>{/each}</div>
             {#if reportTrend.every((period) => period.revenue === 0 && period.profit === 0)}<p class="chart-empty">No sales or profit were recorded in this period.</p>{/if}
           </section>
         {:else}
