@@ -10,6 +10,7 @@
   import { compactMoney, money, rwf, shortDate, today } from '../lib/format';
   import { supabase } from '../lib/supabase';
   import { updateReady, watchForUpdates } from '../lib/appUpdate';
+  import { toCsv } from '../lib/csv';
   import { isStrongPassword, passwordRequirements } from '../lib/password';
   import type { BatchProfit, CartLine, DayClosingSnapshot, Expense, PaymentMethod, Product, Sale, StockEntry, StockLoss, StockLossReason } from '../lib/types';
 
@@ -522,7 +523,7 @@
   function batchName(batch: Pick<BatchProfit, 'productName' | 'at'>) { return `${batch.productName} · ${new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Kigali' }).format(new Date(batch.at))} delivery`; }
   function stockCategoryFor(entry: StockEntry) { return $products.find((product) => product.id === entry.productId)?.category ?? '—'; }
   function estimateStockLoss(productId: string, quantity: number) { let needed = Math.max(0, Math.round(quantity || 0)); let cost = 0; for (const batch of $stockEntries.filter((entry) => entry.productId === productId && entry.remaining > 0).toSorted((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime() || a.id.localeCompare(b.id))) { const used = Math.min(needed, batch.remaining); cost += used * batch.unitCost; needed -= used; if (!needed) break; } return { cost, missing: needed }; }
-  function exportCsv() { const rows = [['Date', 'Client', 'Products', 'Total RWF', 'Cost RWF', 'Profit RWF', 'Payments'], ...visibleSales.map((s) => [s.at, clientLabel(s), s.lines.map((line) => `${line.quantity} x ${line.name}`).join(' | '), s.total, s.cost, s.total - s.cost, s.payments.map((p) => `${p.method}:${p.amount}`).join(' | ')])]; const csv = rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(',')).join('\n'); const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); const a = document.createElement('a'); a.href = url; a.download = `sales-${salesFrom || 'start'}-to-${salesTo || 'latest'}.csv`; a.click(); URL.revokeObjectURL(url); }
+  function exportCsv() { const rows = [['Date', 'Client', 'Products', 'Total RWF', 'Cost RWF', 'Profit RWF', 'Payments'], ...visibleSales.map((s) => [s.at, clientLabel(s), s.lines.map((line) => `${line.quantity} x ${line.name}`).join(' | '), s.total, s.cost, s.total - s.cost, s.payments.map((p) => `${p.method}:${p.amount}`).join(' | ')])]; const csv = toCsv(rows); const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); const a = document.createElement('a'); a.href = url; a.download = `sales-${salesFrom || 'start'}-to-${salesTo || 'latest'}.csv`; a.click(); URL.revokeObjectURL(url); }
   function pointerDown(event: PointerEvent) { if (!canConfirm) return; dragging = true; sliderElement.setPointerCapture(event.pointerId); pointerMove(event); }
   function pointerMove(event: PointerEvent) { if (!dragging) return; const rect = sliderElement.getBoundingClientRect(); dragProgress = Math.max(0, Math.min(1, (event.clientX - rect.left - 27) / (rect.width - 54))); }
   function pointerUp() { if (!dragging) return; dragging = false; if (dragProgress > 0.88) { dragProgress = 1; void finishSale(); } else dragProgress = 0; }

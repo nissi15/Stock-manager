@@ -5,6 +5,7 @@ import { supabase } from './supabase';
 import { generateDemoScenario } from './demoScenario';
 import { legacyQueueCount, offlineSnapshotFor, queuedSalesFor, removeQueuedSale, saveOfflineSnapshot, saveQueuedSale, type QueuedSale } from './offlineQueue';
 import { productsSoldForReport } from './reportPdfData';
+import { isMissingSchema, requestIdFor, settleRequest } from './requestIds';
 
 export const isDemo = !supabase;
 const demo = isDemo ? generateDemoScenario() : null;
@@ -465,7 +466,15 @@ export async function updateSale(saleId: string, lines: CartLine[], payments: Pa
 export async function addStock(input: { productId: string; quantity: number; unitCost: number; supplier: string; paid: number; note: string }) {
   if (get(businessDay)?.date === today() && get(businessDay)?.status === 'closed') throw new Error('Reopen the business day before receiving stock.');
   if (input.quantity <= 0 || input.unitCost < 0 || input.paid < 0 || input.paid > input.quantity * input.unitCost) throw new Error('Check stock quantity, cost and payment.');
-  if (supabase) { const { error } = await supabase.rpc('receive_stock', { p_product_id: input.productId, p_quantity: input.quantity, p_unit_cost: input.unitCost, p_supplier: input.supplier, p_paid: input.paid, p_note: input.note }); if (error) throw error; await refresh(); return; }
+  if (supabase) {
+    const args = { p_product_id: input.productId, p_quantity: input.quantity, p_unit_cost: input.unitCost, p_supplier: input.supplier, p_paid: input.paid, p_note: input.note };
+    let { error } = await supabase.rpc('receive_stock', { ...args, p_request_id: requestIdFor('stock', input) });
+    if (isMissingSchema(error)) ({ error } = await supabase.rpc('receive_stock', args));
+    if (error) throw error;
+    settleRequest('stock', input);
+    await refresh();
+    return;
+  }
   const product = get(products).find((p) => p.id === input.productId);
   stockEntries.update((all) => [{ id: id(), at: new Date().toISOString(), productName: product?.name ?? '', remaining: input.quantity, ...input }, ...all]);
   products.update((all) => all.map((p) => p.id === input.productId ? { ...p, stock: p.stock + input.quantity } : p));
@@ -482,7 +491,15 @@ export async function addProduct(input: Pick<Product, 'name' | 'category' | 'uni
 export async function addExpense(input: Omit<Expense, 'id' | 'at'>) {
   if (get(businessDay)?.date === today() && get(businessDay)?.status === 'closed') throw new Error('Reopen the business day before recording an expense.');
   if (input.amount <= 0) throw new Error('Enter an amount greater than zero.');
-  if (supabase) { const { error } = await supabase.from('expenses').insert(input); if (error) throw error; await refresh(); return; }
+  if (supabase) {
+    let { error } = await supabase.from('expenses').insert({ ...input, client_request_id: requestIdFor('expense', input) });
+    if (isMissingSchema(error)) ({ error } = await supabase.from('expenses').insert(input));
+    // 23505: this exact attempt was already saved before the connection dropped.
+    if (error && error.code !== '23505') throw error;
+    settleRequest('expense', input);
+    await refresh();
+    return;
+  }
   expenses.update((all) => [{ ...input, id: id(), at: new Date().toISOString() }, ...all]);
   audit('Expense recorded', `${input.category} · RWF ${input.amount.toLocaleString()}`);
 }
