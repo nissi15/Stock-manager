@@ -3,3 +3,7 @@ export const rwf = (value: number) => `RWF ${money(value)}`;
 export const compactMoney = (value: number) => new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
 export const shortDate = (value: string) => new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Kigali' }).format(new Date(value));
 export const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kigali', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+/** One spelling for payment methods everywhere: Cash, MoMo, Bank. */
+export const paymentName = (method: string) => method === 'momo' ? 'MoMo' : method.charAt(0).toUpperCase() + method.slice(1);
+/** A business day (YYYY-MM-DD) in the same style as report ranges, e.g. "Nov 13, 2026". */
+export const dayLabel = (day: string) => new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${day}T00:00:00Z`));
