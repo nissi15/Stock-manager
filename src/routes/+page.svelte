@@ -84,7 +84,7 @@
 
   onMount(() => {
     initStore();
-    const stopUpdateWatch = isDemo ? () => {} : watchForUpdates();
+    const stopUpdateWatch = watchForUpdates();
     void tick().then(() => searchInput?.focus());
     if (supabase) {
       const { data } = supabase.auth.onAuthStateChange((_event, session) => { applyAuthSession(session); });
