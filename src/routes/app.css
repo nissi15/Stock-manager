@@ -605,3 +605,4 @@ td.strong{color:#050607;font-weight:700}
 .report-excluded{display:flex;align-items:center;gap:8px;margin-top:12px;padding:9px 12px;border:1px solid #f0c9c3;border-radius:9px;background:#fff5f3;color:#7f231c;font-size:13px;font-weight:600}
 .report-excluded>span{flex:1;min-width:0}
 .report-excluded>svg{flex:none}
+.update-banner{margin-bottom:12px}

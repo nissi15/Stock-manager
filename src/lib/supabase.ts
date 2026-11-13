@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { createTimedFetch } from './timedFetch';
 
 const url = import.meta.env.VITE_SUPABASE_URL;
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -21,4 +22,4 @@ if (!demoMode && isPrivilegedKey(key)) {
   throw new Error('Refusing to expose a Supabase secret/service-role key in the browser. Use a publishable key.');
 }
 
-export const supabase = !demoMode && url && key ? createClient(url, key) : null;
+export const supabase = !demoMode && url && key ? createClient(url, key, { global: { fetch: createTimedFetch() } }) : null;
