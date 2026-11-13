@@ -492,3 +492,117 @@ td.strong{color:#050607;font-weight:700}
   .closing-stock-head,.closing-stock-list>div{grid-template-columns:minmax(120px,1.3fr) 80px 70px;gap:7px}
   .close-day-actions{display:grid;grid-template-columns:1fr}.close-day-actions .primary,.close-day-actions .secondary{width:100%;min-width:0}
 }
+
+.report-select-skeleton{display:block;width:100%;height:43px;border:1px solid #e1e4e8;border-radius:8px;background:linear-gradient(100deg,#edf0f3 25%,#f7f8fa 45%,#edf0f3 65%);background-size:220% 100%;animation:report-skeleton-shimmer 1.5s ease-in-out infinite}
+@keyframes report-skeleton-shimmer{to{background-position-x:-220%}}
+@media(prefers-reduced-motion:reduce){.report-select-skeleton{animation:none}}
+.connection-status{display:inline-flex;align-items:center;gap:7px;color:#087d50;font-weight:600}
+.connection-status.offline{color:#4b718e}
+.connection-status svg{flex:none;stroke-width:2}
+.banner.connection-banner{justify-content:flex-start;gap:12px;padding:13px 16px;border:1px solid #d7e6f7;border-radius:10px;background:#f0f6fc;color:#355b7a;font-size:14px;line-height:1.4}
+.connection-banner svg{flex:none;color:#4c789e}
+.connection-banner span{display:flex;flex-direction:column;gap:2px}
+.connection-banner strong{color:#244c70}
+.connection-banner small{font-size:13px;color:#53718a}
+.connection-banner button{margin-left:auto;font-weight:600;white-space:nowrap}
+.queue-review{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:20px 0;padding:15px 18px;border:1px solid #d7e6f7;border-radius:10px;background:#f4f8fd;color:#244c70}
+.queue-review-copy{display:flex;align-items:flex-start;gap:12px}
+.queue-review-copy svg{flex:none;color:#4c789e;margin-top:1px}
+.queue-review-copy span{display:flex;flex-direction:column;gap:4px}
+.queue-review small{font-size:12px;color:#53718a}
+.queue-review.attention{border-color:#edc77c;background:#fff9ed;color:#6c480f}
+.queue-review.attention .queue-review-copy svg,.queue-review.attention small{color:#8c6222}
+.queue-review button{flex:none}
+.queue-auto-sync{color:#53718a;font-size:12px;font-weight:600;white-space:nowrap}
+.sale-sync-error{display:block;max-width:250px;margin-top:5px;color:#a33229;font-size:11px;line-height:1.35}
+@media(max-width:600px){.queue-review{align-items:stretch;flex-direction:column}.queue-review button{width:100%}.queue-auto-sync{padding-left:32px}.banner.connection-banner{align-items:flex-start}.connection-banner button{align-self:center}}
+
+/* Sale screen always fits the viewport, so notices never push the confirm button off screen */
+.product-list{flex:1;min-height:0;overflow-y:auto}
+@media(min-width:851px){
+  .workspace.sale-page{height:100vh;display:flex;flex-direction:column;padding-bottom:20px}
+  .workspace.sale-page>.topbar,.workspace.sale-page>.banner{flex:none}
+  .workspace.sale-page>.sale-layout{flex:1;height:auto;min-height:420px}
+}
+
+/* Toasts replace in-flow success and error banners */
+.toast-stack{position:fixed;top:16px;left:50%;z-index:30;width:min(560px,calc(100vw - 24px));display:flex;flex-direction:column;gap:8px;transform:translateX(-50%);pointer-events:none}
+.toast{pointer-events:auto;display:flex;align-items:flex-start;gap:10px;padding:12px 15px;border-radius:9px;background:#e7f7ee;color:#146c3f;font-size:14px;line-height:1.4;box-shadow:0 12px 30px #20252b24;animation:toast-in .2s ease}
+.toast.danger{background:#fff0ed;color:#a32921}
+.toast svg{flex:none;margin-top:1px}
+.toast>span{flex:1;min-width:0;overflow-wrap:anywhere}
+.toast button{flex:none;display:grid;place-items:center;border:0;background:none;color:inherit;padding:2px}
+@keyframes toast-in{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+
+/* Day status chip, day action and sync state in the top bar */
+.day-chip,.connection-status,.status-button{white-space:nowrap}
+.day-chip{font-weight:650}
+.status-button{font-weight:650}
+.sync-chip{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border:1px solid #d7e6f7;border-radius:999px;background:#f0f6fc;color:#244c70;font-size:13px;font-weight:650;white-space:nowrap}
+.sync-chip:hover{background:#eef5ff}
+.sync-chip.danger{border-color:#efc8c2;background:#fff2f0;color:#9b3128}
+.sync-chip.danger:hover{background:#fff0ed}
+@media(max-width:1240px){.connection-detail{display:none}}
+@media(max-width:850px){.day-chip{display:none!important}}
+@media(max-width:600px){.connection-label{display:none}.sync-chip{height:30px;padding:0 9px;font-size:11px}}
+
+/* Stock warnings on the sale screen */
+.panel-pills{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px}
+.restock-pill{display:inline-flex;align-items:center;gap:6px;border-color:#f1d7ad;background:#fffaf1;color:#8b4e00;font-weight:700}
+.restock-pill:hover{background:#fff3dd}
+.stock-low{color:#935b08;font-weight:700}
+@media(max-width:600px){.stock-out{font-size:10px}}
+
+/* Sales history rows */
+.sale-time{white-space:nowrap}
+.sale-products-text{display:flex;min-width:0;flex-direction:column;gap:3px}
+.sale-products-text strong{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.sale-products-text small{color:#59636e;font-size:12px;font-weight:500}
+
+/* Report chart: value axis, value gridlines and dense daily view */
+.financial-trend{padding-left:0;border-bottom:0;background:linear-gradient(#e0e4e8,#e0e4e8) 0 calc(100% - 35px)/100% 1px no-repeat,linear-gradient(#edf0f2,#edf0f2) 0 calc(100% - 87px)/100% 1px no-repeat,linear-gradient(#edf0f2,#edf0f2) 0 calc(100% - 140px)/100% 1px no-repeat,linear-gradient(#edf0f2,#edf0f2) 0 calc(100% - 192px)/100% 1px no-repeat,linear-gradient(#edf0f2,#edf0f2) 0 calc(100% - 245px)/100% 1px no-repeat}
+.trend-axis{position:sticky;left:0;z-index:2;align-self:end;height:260px;background:#fff}
+.trend-axis span{position:absolute;right:8px;transform:translateY(50%);color:#707983;font-size:10px;font-weight:600;white-space:nowrap}
+.trend-axis+.financial-period .trend-tooltip{left:0;transform:translate(0,-8px)}
+.trend-axis+.financial-period:hover .trend-tooltip,.trend-axis+.financial-period:focus-within .trend-tooltip{transform:translate(0,0)}
+.financial-trend.dense{gap:6px}
+.financial-trend.dense .financial-period{min-width:26px}
+.financial-trend.dense .financial-bars{gap:2px}
+.financial-trend.dense .financial-bar{width:min(14px,46%);border-radius:4px 4px 0 0}
+.financial-trend.dense .financial-period-label{font-size:10px}
+
+/* Rejected offline sales: one panel that names the sale, the reason and the fix */
+.banner.queue-banner{justify-content:flex-start;gap:10px;padding:11px 15px;border:1px solid #f0c9c3;font-size:14px;font-weight:600}
+.banner.queue-banner>svg{flex:none}
+.banner.queue-banner>span{flex:1;min-width:0}
+.banner.queue-banner button{flex:none;font-weight:700;text-decoration:underline;text-underline-offset:3px}
+.sync-review{margin:20px 0;border:1px solid #efc8c2;border-radius:12px;background:#fff;overflow:hidden}
+.sync-review-head{display:flex;align-items:center;gap:13px;padding:14px 18px;background:#fff5f3;border-bottom:1px solid #f3d6d1}
+.sync-review-icon{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:#fde3df;color:#a72b23}
+.sync-review-head>div{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.sync-review-head strong{color:#7f231c;font-size:15px}
+.sync-review-head small{color:#6d403c;font-size:13px;line-height:1.4}
+.sync-review-head .secondary{flex:none}
+.sync-review-list{margin:0;padding:0;list-style:none}
+.sync-review-list li{display:grid;grid-template-columns:minmax(150px,1fr) minmax(190px,1.5fr) auto;align-items:center;gap:18px;padding:13px 18px}
+.sync-review-list li+li{border-top:1px solid #f1e4e2}
+.sync-review-sale,.sync-review-reason{display:flex;flex-direction:column;gap:3px;min-width:0}
+.sync-review-sale strong{color:#10141b;font-size:14px}
+.sync-review-reason strong{color:#a72b23;font-size:14px;font-weight:650}
+.sync-review-list small{color:#59636e;font-size:12.5px;line-height:1.4}
+.sync-review-list .sale-link{display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
+.sync-review-foot{margin:0;padding:10px 18px;border-top:1px solid #f1e4e2;background:#fbfbfc;color:#59636e;font-size:12.5px}
+.sale-sync-error{max-width:220px;font-size:12px;color:#8f3a33}
+@media(max-width:700px){.sync-review-head{flex-wrap:wrap}.sync-review-head .secondary{width:100%;justify-content:center}.sync-review-list li{grid-template-columns:1fr;gap:8px}}
+
+/* A month of daily bars fits a normal desktop width without sideways scrolling */
+.financial-trend.dense{gap:4px}
+.financial-trend.dense .financial-period{min-width:0}
+.financial-trend.dense .financial-period-label{white-space:nowrap}
+/* Tooltips near the right edge open leftwards so they never add a sideways scrollbar */
+.financial-period:last-child .trend-tooltip,.financial-trend.dense .financial-period:nth-last-child(-n+4) .trend-tooltip{left:auto;right:0;transform:translate(0,-8px)}
+.financial-period:last-child:hover .trend-tooltip,.financial-period:last-child:focus-within .trend-tooltip,.financial-trend.dense .financial-period:nth-last-child(-n+4):hover .trend-tooltip,.financial-trend.dense .financial-period:nth-last-child(-n+4):focus-within .trend-tooltip{transform:translate(0,0)}
+.report-excluded{display:flex;align-items:center;gap:8px;margin-top:12px;padding:9px 12px;border:1px solid #f0c9c3;border-radius:9px;background:#fff5f3;color:#7f231c;font-size:13px;font-weight:600}
+.report-excluded>span{flex:1;min-width:0}
+.report-excluded>svg{flex:none}
+.update-banner{margin-bottom:12px}

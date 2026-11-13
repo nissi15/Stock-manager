@@ -25,8 +25,7 @@ export type ReportPdfData = {
   expenseTotal: number;
   stockLossTotal: number;
   netProfit: number;
-  paymentDate: string;
-  paymentsToday: Record<PaymentMethod, number>;
+  payments: Record<PaymentMethod, number>;
   productsSold: { label: string; units: number }[];
 };
 
@@ -86,6 +85,38 @@ function fittedLabel(doc: PdfDocument, label: string, maxWidth: number) {
   return `${shortened}...`;
 }
 
+function productBarChart(doc: PdfDocument, products: { label: string; units: number }[], sectionY: number, emptyMessage: string) {
+  section(doc, 'Products sold (units)', sectionY);
+  const sortedProducts = products.filter((product) => product.units > 0)
+    .sort((a, b) => b.units - a.units || a.label.localeCompare(b.label));
+  const chartProducts = sortedProducts.length > 8
+    ? [...sortedProducts.slice(0, 7), { label: `Other (${sortedProducts.length - 7} products)`, units: sortedProducts.slice(7).reduce((sum, product) => sum + product.units, 0) }]
+    : sortedProducts;
+  if (!chartProducts.length) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(91, 101, 114);
+    doc.text(emptyMessage, 18, sectionY + 16);
+    return;
+  }
+
+  const maxUnits = Math.max(...chartProducts.map((product) => product.units));
+  chartProducts.forEach((product, index) => {
+    const y = sectionY + 16 + index * 7.1;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(47, 55, 65);
+    doc.text(fittedLabel(doc, product.label, 68), 18, y);
+    doc.setFillColor(236, 240, 245);
+    doc.rect(91, y - 3.1, 76, 3.5, 'F');
+    doc.setFillColor(34, 104, 219);
+    doc.rect(91, y - 3.1, Math.max(1, product.units / maxUnits * 76), 3.5, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(17, 20, 24);
+    doc.text(formatNumber(product.units), 192, y, { align: 'right' });
+  });
+}
+
 export async function exportDayClosingPdf(snapshot: DayClosingSnapshot, canSave: () => boolean = () => true) {
   const { jsPDF } = await import('jspdf');
   if (!canSave()) return;
@@ -108,16 +139,19 @@ export async function exportDayClosingPdf(snapshot: DayClosingSnapshot, canSave:
   row(doc, 'Stock losses', money(snapshot.stockLossTotal), 112);
   row(doc, 'Net profit', money(snapshot.netProfit), 121, true);
 
-  section(doc, 'Money collected', 136);
-  row(doc, 'Cash sales', money(snapshot.payments.cash), 146);
-  row(doc, 'MoMo sales', money(snapshot.payments.momo), 154);
-  row(doc, 'Bank sales', money(snapshot.payments.bank), 162);
-  row(doc, 'Expected physical cash', money(snapshot.expectedCash), 173, true);
-  row(doc, 'Counted physical cash', money(snapshot.countedCash), 181, true);
-  row(doc, 'Cash difference', money(snapshot.cashDifference), 189, true);
+  productBarChart(doc, snapshot.productsSold, 136, 'No products sold on this business day.');
 
-  section(doc, 'Stock remaining at close', 205);
-  let y = 215;
+  section(doc, 'Money collected', 213);
+  row(doc, 'Cash sales', money(snapshot.payments.cash), 223);
+  row(doc, 'MoMo sales', money(snapshot.payments.momo), 231);
+  row(doc, 'Bank sales', money(snapshot.payments.bank), 239);
+  row(doc, 'Expected physical cash', money(snapshot.expectedCash), 250, true);
+  row(doc, 'Counted physical cash', money(snapshot.countedCash), 258, true);
+  row(doc, 'Cash difference', money(snapshot.cashDifference), 266, true);
+
+  doc.addPage();
+  heading(doc, 'Stock remaining at close', snapshot.date);
+  let y = 42;
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
   doc.text('Product', 18, y);
@@ -146,7 +180,8 @@ export async function exportReportPdf(data: ReportPdfData, canSave: () => boolea
   const { jsPDF } = await import('jspdf');
   if (!canSave()) return;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' }) as unknown as PdfDocument;
-  heading(doc, 'Business report', `${data.dateRange} | ${data.scope}`);
+  const printableDateRange = data.dateRange.replace(/[–—]/g, '-');
+  heading(doc, 'Business report', `${printableDateRange} | ${data.scope}`);
 
   metric(doc, 'Sales revenue', money(data.salesRevenue), 16, 38);
   metric(doc, 'Gross profit', money(data.grossProfit), 77, 38);
@@ -155,34 +190,7 @@ export async function exportReportPdf(data: ReportPdfData, canSave: () => boolea
   metric(doc, 'Operating expenses', money(data.expenseTotal), 77, 65);
   metric(doc, 'Stock loss', money(data.stockLossTotal), 138, 65);
 
-  section(doc, 'Products sold (units)', 101);
-  const sortedProducts = data.productsSold.filter((product) => product.units > 0)
-    .sort((a, b) => b.units - a.units || a.label.localeCompare(b.label));
-  const chartProducts = sortedProducts.length > 8
-    ? [...sortedProducts.slice(0, 7), { label: `Other (${sortedProducts.length - 7} products)`, units: sortedProducts.slice(7).reduce((sum, product) => sum + product.units, 0) }]
-    : sortedProducts;
-  if (!chartProducts.length) {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(91, 101, 114);
-    doc.text('No products sold in this report period.', 18, 137);
-  } else {
-    const maxUnits = Math.max(...chartProducts.map((product) => product.units));
-    chartProducts.forEach((product, index) => {
-      const y = 117 + index * 7.1;
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(47, 55, 65);
-      doc.text(fittedLabel(doc, product.label, 68), 18, y);
-      doc.setFillColor(236, 240, 245);
-      doc.rect(91, y - 3.1, 76, 3.5, 'F');
-      doc.setFillColor(34, 104, 219);
-      doc.rect(91, y - 3.1, Math.max(1, product.units / maxUnits * 76), 3.5, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(17, 20, 24);
-      doc.text(formatNumber(product.units), 192, y, { align: 'right' });
-    });
-  }
+  productBarChart(doc, data.productsSold, 101, 'No products sold in this report period.');
 
   section(doc, 'Summary', 182);
   row(doc, `Sales (${formatNumber(data.salesCount)})`, money(data.salesRevenue), 192);
@@ -192,10 +200,10 @@ export async function exportReportPdf(data: ReportPdfData, canSave: () => boolea
   row(doc, 'Stock loss', money(data.stockLossTotal), 224);
   row(doc, 'Net profit', money(data.netProfit), 233, true);
 
-  section(doc, `Today's payments - ${data.paymentDate} (whole business)`, 248);
-  row(doc, 'Cash', money(data.paymentsToday.cash), 258);
-  row(doc, 'MoMo', money(data.paymentsToday.momo), 266);
-  row(doc, 'Bank', money(data.paymentsToday.bank), 274);
+  section(doc, `Payments collected - ${printableDateRange} (whole business)`, 248);
+  row(doc, 'Cash', money(data.payments.cash), 258);
+  row(doc, 'MoMo', money(data.payments.momo), 266);
+  row(doc, 'Bank', money(data.payments.bank), 274);
 
-  if (canSave()) doc.save(`business-report-${data.dateRange.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`);
+  if (canSave()) doc.save(`business-report-${printableDateRange.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`);
 }
